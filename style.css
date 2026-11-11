@@ -70,6 +70,12 @@ legend { font-size: .92rem; margin-bottom: 6px; }
   font-size: .85rem; display: flex; gap: 6px; align-items: center; background: #fff;
 }
 .chips label:has(input:checked) { background: var(--sel); border-color: var(--primary); }
+.chip-btn {
+  padding: 6px 12px; border-radius: 999px; font-size: .85rem;
+  border: 1px solid var(--bad); background: var(--bad-bg); color: var(--bad);
+}
+.chip-btn b { margin-left: 4px; }
+details.rq summary .tag { margin-right: 4px; }
 .seg label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
 @media (max-width: 480px) { .stats { grid-template-columns: repeat(2, 1fr); } }
@@ -121,3 +127,7 @@ details.rq summary { cursor: pointer; font-size: .92rem; }
 }
 dialog { border: none; border-radius: var(--radius); padding: 16px; width: min(640px, 94vw); max-height: 90vh; }
 dialog::backdrop { background: rgba(0,0,0,.4); }
+.wrong-n { color: var(--bad); font-size: .78rem; font-weight: 700; }
+.footer { max-width: 760px; margin: 0 auto; padding: 0 12px 32px; display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: .8rem; }
+.changelog-item { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.changelog-item ul { margin: 4px 0 0; padding-left: 20px; }

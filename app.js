@@ -25,6 +25,23 @@ const CATS = {
 const LETTERS = "ABCDEF";
 const BANK_KEY = "ent-bank-v1";
 const SEC_PER_Q = 60; // 模擬考每題秒數
+const SNAP_KEEP = 20;  // 題庫備份保留份數
+const SNAP_CHUNK = 150; // 每個備份分塊的題數（Firestore 單一文件上限 1 MB）
+
+/* ---------- 網站版本（每次更新程式請改這裡） ---------- */
+const APP_VERSION = "1.1.0";
+const CHANGELOG = [
+  { v: "1.1.0", date: "2026-11-11", notes: [
+    "做題前可複選這次要複習的科目，並選擇「全部／沒做過／錯題複習」",
+    "新增錯題本：依科目瀏覽錯題、看詳解、手動移出已會的題目",
+    "錯題複習時答對的題目會自動移出錯題本",
+    "網頁底部顯示網站版本與題庫更新時間",
+    "管理者：題庫每次變更前自動備份，可一鍵還原到先前版本"
+  ]},
+  { v: "1.0.0", date: "2026-11-11", notes: [
+    "初版：邀請制登入、練習模式、限時模擬考、個人進度、管理後台"
+  ]}
+];
 
 /* ---------- Firebase ---------- */
 const app = initializeApp(firebaseConfig);
@@ -32,13 +49,15 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 /* ---------- 狀態 ---------- */
-const S = { user: null, admin: false, bank: [], progress: {}, quiz: null, timer: null, registering: false };
+const S = { user: null, admin: false, bank: [], bankMeta: null, progress: {}, quiz: null, timer: null, registering: false };
 
 /* ---------- 小工具 ---------- */
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = (s) => esc(s).replace(/\n/g, "<br>");
 const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "—");
+// 錯題：最近一次答錯，且沒有被手動移出錯題本
+const isWrong = (p) => !!p && p.last === false && !p.m;
 function show(name) {
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
   window.scrollTo(0, 0);
@@ -166,7 +185,7 @@ async function handleUser(u) {
     await loadBank();
     $("nav").hidden = false;
     $("nav-admin").hidden = !S.admin;
-    renderHome(); show("home");
+    renderHome(); renderFooter(); show("home");
   } catch (e) {
     console.error(e);
     $("auth-err").textContent = "載入失敗：" + errMsg(e);
@@ -182,7 +201,8 @@ function writeCache(version) {
 }
 async function loadBank(force = false) {
   const meta = await getDoc(doc(db, "meta", "bank"));
-  const version = meta.exists() ? meta.data().version || 0 : 0;
+  S.bankMeta = meta.exists() ? meta.data() : null;
+  const version = S.bankMeta?.version || 0;
   const cached = readCache();
   if (!force && cached && cached.version === version && Array.isArray(cached.questions)) {
     S.bank = cached.questions;
@@ -196,14 +216,36 @@ async function loadBank(force = false) {
 async function bumpVersion() {
   const version = Date.now();
   await setDoc(doc(db, "meta", "bank"), { version, count: S.bank.length, updatedAt: serverTimestamp() }, { merge: true });
+  S.bankMeta = { ...(S.bankMeta || {}), version, count: S.bank.length };
   writeCache(version);
+  renderFooter();
 }
+
+/* ---------- 版本資訊 ---------- */
+function fmtTime(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+function renderFooter() {
+  let t = `網站版本 v${APP_VERSION}`;
+  if (S.user && S.bankMeta?.version) t += `　·　題庫更新於 ${fmtTime(S.bankMeta.version)}（${S.bank.length} 題）`;
+  $("footer-text").textContent = t;
+}
+$("btn-changelog").onclick = () => {
+  $("changelog").innerHTML = CHANGELOG.map((c) =>
+    `<div class="changelog-item"><b>v${c.v}</b> <span class="muted small">${c.date}</span><ul>${c.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`
+  ).join("");
+  $("dlg-changelog").showModal();
+};
+$("changelog-close").onclick = () => $("dlg-changelog").close();
+renderFooter();
 
 /* ---------- 導覽 ---------- */
 function go(name) {
   stopTimer();
   if (name === "home") { S.quiz = null; renderHome(); show("home"); }
   if (name === "admin" && S.admin) { S.quiz = null; renderAdmin(); }
+  if (name === "wrong") { S.quiz = null; renderWrongBook(); show("wrong"); }
 }
 document.addEventListener("click", (e) => {
   const g = e.target.closest("[data-go]");
@@ -219,47 +261,108 @@ function catOptionsHTML(withAll) {
 }
 function renderHome() {
   const per = {};
-  for (const k of Object.keys(CATS)) per[k] = { total: 0, ans: 0, cor: 0 };
+  for (const k of Object.keys(CATS)) per[k] = { total: 0, ans: 0, cor: 0, wrong: 0 };
   let ans = 0, cor = 0, wrong = 0;
   for (const q of S.bank) {
-    const c = per[q.category] || (per[q.category] = { total: 0, ans: 0, cor: 0 });
+    const c = per[q.category] || (per[q.category] = { total: 0, ans: 0, cor: 0, wrong: 0 });
     c.total++;
     const p = S.progress[q.id];
-    if (p) { c.ans++; ans++; if (p.last) { c.cor++; cor++; } else wrong++; }
+    if (p) { c.ans++; ans++; if (p.last) { c.cor++; cor++; } }
+    if (isWrong(p)) { c.wrong++; wrong++; }
   }
   $("stats-summary").innerHTML = [
     ["題庫總數", S.bank.length], ["已做過", ans], ["最近一次答對率", pct(cor, ans)], ["待複習錯題", wrong]
   ].map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
   $("stats-table").innerHTML =
-    `<tr><th>範圍</th><th class="num">題數</th><th class="num">已做</th><th class="num">答對率</th></tr>` +
+    `<tr><th>範圍</th><th class="num">題數</th><th class="num">已做</th><th class="num">答對率</th><th></th></tr>` +
     Object.entries(per).map(([k, c]) =>
-      `<tr><td>${esc(CATS[k] || k)}</td><td class="num">${c.total}</td><td class="num">${c.ans}</td><td class="num">${pct(c.cor, c.ans)}</td></tr>`
+      `<tr><td>${esc(CATS[k] || k)}</td><td class="num">${c.total}</td><td class="num">${c.ans}</td><td class="num">${pct(c.cor, c.ans)}</td>
+       <td class="num">${c.total ? `<button class="link" data-only-cat="${k}">練這科</button>` : ""}</td></tr>`
     ).join("");
+
+  $("wrong-total").textContent = wrong ? `（共 ${wrong} 題）` : "（目前沒有錯題）";
 
   // 範圍選擇（保留原本勾選）
   const box = $("cat-boxes");
   const prev = new Set([...box.querySelectorAll("input:checked")].map((i) => i.value));
   const first = !box.children.length;
   box.innerHTML = Object.entries(CATS).map(([k, v]) =>
-    `<label><input type="checkbox" value="${k}" ${first || prev.has(k) ? "checked" : ""}> ${v} <span class="muted">${per[k].total}</span></label>`
+    `<label><input type="checkbox" value="${k}" ${first || prev.has(k) ? "checked" : ""}> ${v} <span class="muted">${per[k].total}</span>${per[k].wrong ? ` <span class="wrong-n">錯${per[k].wrong}</span>` : ""}</label>`
   ).join("");
   updatePoolInfo();
   renderRecent();
 }
 function buildPool() {
   const cats = [...document.querySelectorAll("#cat-boxes input:checked")].map((i) => i.value);
-  const f = $("setup-filter").value;
+  const f = setupFilter();
   return S.bank.filter((q) => {
     if (!cats.includes(q.category)) return false;
     const p = S.progress[q.id];
     if (f === "new") return !p;
-    if (f === "wrong") return p && !p.last;
+    if (f === "wrong") return isWrong(p);
     return true;
   });
 }
+
+/* ---------- 錯題複習 ---------- */
+function wrongPool(cat) {
+  return S.bank.filter((q) => (cat === "all" || q.category === cat) && isWrong(S.progress[q.id]));
+}
+function startWrongReview(cat) {
+  const pool = wrongPool(cat);
+  if (!pool.length) { toast("這個範圍沒有錯題"); return; }
+  // 答錯次數多的優先，同次數隨機；一次最多 50 題
+  const qs = shuffle(pool.slice()).sort((a, b) => (S.progress[b.id].w || 0) - (S.progress[a.id].w || 0)).slice(0, 50);
+  startQuiz(qs, "practice", "review");
+}
+$("wrong-book-open").onclick = () => go("wrong");
+$("stats-table").onclick = (e) => {
+  const b = e.target.closest("[data-only-cat]");
+  if (!b) return;
+  document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = i.value === b.dataset.onlyCat));
+  updatePoolInfo();
+  $("form-setup").scrollIntoView({ behavior: "smooth", block: "start" });
+  toast(`已只選「${CATS[b.dataset.onlyCat]}」，設定好題數後按開始`);
+};
+
+/* ---------- 錯題本 ---------- */
+function renderWrongBook() {
+  const sel = $("wb-cat");
+  if (!sel.options.length) sel.innerHTML = catOptionsHTML(true);
+  const cat = sel.value || "all";
+  const list = wrongPool(cat);
+  if ($("wb-sort").value === "most") list.sort((a, b) => (S.progress[b.id].w - S.progress[a.id].w) || (S.progress[b.id].t - S.progress[a.id].t));
+  else list.sort((a, b) => S.progress[b.id].t - S.progress[a.id].t);
+  $("wb-count").textContent = `共 ${list.length} 題`;
+  $("wb-review").disabled = !list.length;
+  $("wb-list").innerHTML = list.map((q) => {
+    const p = S.progress[q.id];
+    const opts = q.options.map((o, k) =>
+      `<div class="ropt ${k === q.answer ? "correct" : k === p.sel ? "wrong" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${k === p.sel ? "　← 你上次的答案" : ""}${k === q.answer ? "　✓ 正解" : ""}</div>`
+    ).join("");
+    const head = esc(q.stem.replace(/\s+/g, " ").slice(0, 46)) + (q.stem.length > 46 ? "…" : "");
+    return `<details class="rq bad"><summary><span class="tag">${esc(CATS[q.category] || q.category)}</span> ${head}<br><span class="muted small">答錯 ${p.w} 次／共作答 ${p.n} 次</span></summary>
+      <p>${fmt(q.stem)}</p>${opts}
+      <div class="feedback"><div class="expl">${fmt(q.explanation || "（尚無詳解）")}</div>${q.source ? `<div class="src">出處：${esc(q.source)}</div>` : ""}</div>
+      <div class="row"><button class="link" data-master="${esc(q.id)}">我已經會了，移出錯題本</button></div></details>`;
+  }).join("") || `<p class="muted">這個範圍沒有錯題。</p>`;
+}
+$("wb-cat").onchange = renderWrongBook;
+$("wb-sort").onchange = renderWrongBook;
+$("wb-review").onclick = () => startWrongReview($("wb-cat").value || "all");
+$("wb-list").onclick = async (e) => {
+  const b = e.target.closest("[data-master]");
+  if (!b) return;
+  const id = b.dataset.master;
+  S.progress[id] = { ...S.progress[id], m: true };
+  renderWrongBook();
+  try { await updateDoc(doc(db, "users", S.user.uid), new FieldPath("progress", id, "m"), true); toast("已移出錯題本"); }
+  catch (err) { toast("儲存失敗：" + errMsg(err)); }
+};
 function updatePoolInfo() { $("pool-info").textContent = `符合條件的題目：${buildPool().length} 題`; }
 $("cat-boxes").onchange = updatePoolInfo;
-$("setup-filter").onchange = updatePoolInfo;
+const setupFilter = () => document.querySelector("input[name=filter]:checked").value;
+$("setup-filter-group").onchange = updatePoolInfo;
 $("cat-all").onclick = () => { document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = true)); updatePoolInfo(); };
 $("cat-none").onclick = () => { document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = false)); updatePoolInfo(); };
 
@@ -282,12 +385,16 @@ $("form-setup").onsubmit = (e) => {
   if (!pool.length) { toast("沒有符合條件的題目"); return; }
   const n = +$("setup-count").value;
   const mode = document.querySelector("input[name=mode]:checked").value;
-  startQuiz(shuffle(pool.slice()).slice(0, n), mode);
+  if (setupFilter() === "wrong") {
+    // 錯題複習：答錯次數多的優先
+    const qs = shuffle(pool.slice()).sort((a, b) => (S.progress[b.id].w || 0) - (S.progress[a.id].w || 0)).slice(0, n);
+    startQuiz(qs, mode, "review");
+  } else startQuiz(shuffle(pool.slice()).slice(0, n), mode);
 };
 
-function startQuiz(qs, mode) {
+function startQuiz(qs, mode, kind = "normal") {
   S.quiz = {
-    qs, mode, i: 0, done: false, start: Date.now(),
+    qs, mode, kind, i: 0, done: false, start: Date.now(),
     answers: Array(qs.length).fill(null),
     revealed: Array(qs.length).fill(false)
   };
@@ -310,7 +417,7 @@ function renderQ() {
   const Q = S.quiz, q = Q.qs[Q.i], sel = Q.answers[Q.i];
   const rev = Q.mode === "practice" && Q.revealed[Q.i];
   const last = Q.i === Q.qs.length - 1;
-  $("quiz-pos").textContent = `第 ${Q.i + 1} / ${Q.qs.length} 題`;
+  $("quiz-pos").textContent = `${Q.kind === "review" ? "錯題複習　" : ""}第 ${Q.i + 1} / ${Q.qs.length} 題`;
   $("quiz-cat").textContent = CATS[q.category] || q.category;
   $("quiz-stem").innerHTML = fmt(q.stem);
   $("quiz-options").innerHTML = q.options.map((o, k) => {
@@ -354,7 +461,7 @@ $("quiz-submit").onclick = () => {
   if (Q.answers[Q.i] == null) return;
   Q.revealed[Q.i] = true;
   renderQ();
-  recordAnswers([{ id: q.id, ok: Q.answers[Q.i] === q.answer }]);
+  recordAnswers([{ id: q.id, ok: Q.answers[Q.i] === q.answer, sel: Q.answers[Q.i] }]);
 };
 $("quiz-next").onclick = () => {
   const Q = S.quiz;
@@ -398,9 +505,10 @@ function stopTimer() { clearInterval(S.timer); S.timer = null; }
 
 async function recordAnswers(list) {
   const args = [];
-  for (const { id, ok } of list) {
+  for (const { id, ok, sel } of list) {
     const p = S.progress[id] || { n: 0, w: 0 };
-    const np = { n: p.n + 1, w: p.w + (ok ? 0 : 1), last: ok, t: Date.now() };
+    // 重新作答後清除「手動移出」標記；sel 記錄這次選的答案（未作答為 -1）
+    const np = { n: p.n + 1, w: p.w + (ok ? 0 : 1), last: ok, t: Date.now(), sel: sel ?? -1 };
     S.progress[id] = np;
     args.push(new FieldPath("progress", id), np);
   }
@@ -415,8 +523,16 @@ function finishQuiz() {
   Q.done = true; stopTimer();
   const idx = Q.qs.map((_, i) => i).filter((i) => Q.mode === "exam" || Q.revealed[i]);
   const items = idx.map((i) => ({ n: i + 1, q: Q.qs[i], sel: Q.answers[i], ok: Q.answers[i] === Q.qs[i].answer }));
-  if (Q.mode === "exam") recordAnswers(items.map((x) => ({ id: x.q.id, ok: x.ok })));
+  if (Q.mode === "exam") recordAnswers(items.map((x) => ({ id: x.q.id, ok: x.ok, sel: x.sel })));
   const correct = items.filter((x) => x.ok).length;
+
+  $("result-title").textContent = Q.kind === "review" ? "錯題複習結果" : "成績";
+  const note = $("result-note");
+  note.hidden = Q.kind !== "review";
+  if (Q.kind === "review") {
+    const left = S.bank.filter((q) => isWrong(S.progress[q.id])).length;
+    note.textContent = `這次答對的 ${correct} 題已移出錯題本，錯題本還有 ${left} 題。`;
+  }
 
   $("result-score").innerHTML = `${correct} / ${items.length}　<span class="muted">${pct(correct, items.length)}</span>`;
   const per = {};
@@ -448,7 +564,7 @@ function finishQuiz() {
 function renderAdmin() {
   $("adm-count").textContent = S.bank.length;
   if (!$("adm-cat").options.length) $("adm-cat").innerHTML = catOptionsHTML(true);
-  renderInvites(); renderQList(); show("admin");
+  renderInvites(); renderQList(); renderSnapshots(); show("admin");
 }
 async function renderInvites() {
   const t = $("inv-list");
@@ -487,6 +603,85 @@ $("inv-copy").onclick = async () => {
   const text = `你已受邀使用 ENT 專科考試練習網站：\n${url}\n\n請點「受邀新用戶？註冊帳號」，用收到這則訊息的 Email 註冊，並到信箱完成 Email 驗證後即可登入。`;
   try { await navigator.clipboard.writeText(text); toast("已複製邀請訊息"); }
   catch { prompt("請手動複製：", text); }
+};
+
+/* ---------- 管理：題庫備份與還原 ---------- */
+async function createSnapshot(note) {
+  const id = String(Date.now());
+  const chunks = [];
+  for (let i = 0; i < S.bank.length; i += SNAP_CHUNK) chunks.push(S.bank.slice(i, i + SNAP_CHUNK));
+  for (let i = 0; i < chunks.length; i += 400) {
+    const b = writeBatch(db);
+    chunks.slice(i, i + 400).forEach((c, j) => b.set(doc(db, "bankSnapshots", id, "chunks", String(i + j)), { qs: c }));
+    await b.commit();
+  }
+  // 分塊寫完才寫索引文件，確保列出來的備份都是完整的
+  await setDoc(doc(db, "bankSnapshots", id), {
+    createdAt: Date.now(), note, count: S.bank.length, chunks: chunks.length, by: S.user.email
+  });
+  pruneSnapshots().catch(console.error);
+  return id;
+}
+async function listSnapshots() {
+  const snap = await getDocs(query(collection(db, "bankSnapshots"), orderBy("createdAt", "desc")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+async function deleteSnapshot(id) {
+  const ch = await getDocs(collection(db, "bankSnapshots", id, "chunks"));
+  const b = writeBatch(db);
+  ch.docs.forEach((d) => b.delete(d.ref));
+  b.delete(doc(db, "bankSnapshots", id));
+  await b.commit();
+}
+async function pruneSnapshots() {
+  const all = await listSnapshots();
+  for (const s of all.slice(SNAP_KEEP)) await deleteSnapshot(s.id);
+}
+async function renderSnapshots() {
+  const t = $("snap-list");
+  try {
+    const all = await listSnapshots();
+    t.innerHTML = `<tr><th>備份時間</th><th>說明</th><th class="num">題數</th><th></th></tr>` + (all.map((s) =>
+      `<tr><td>${fmtTime(s.createdAt)}</td><td>${esc(s.note)}<br><span class="muted small">${esc(s.by || "")}</span></td><td class="num">${s.count}</td>
+       <td class="num"><button class="link" data-restore="${s.id}">還原</button></td></tr>`
+    ).join("") || `<tr><td colspan="4" class="muted">還沒有備份，第一次匯入或編輯題目時會自動建立。</td></tr>`);
+  } catch (e) { t.innerHTML = `<tr><td class="err">讀取失敗：${esc(errMsg(e))}（請確認已更新 Firestore 規則）</td></tr>`; }
+}
+async function restoreSnapshot(id) {
+  const meta = await getDoc(doc(db, "bankSnapshots", id));
+  if (!meta.exists()) { toast("找不到這份備份"); return; }
+  const m = meta.data();
+  if (!confirm(`確定把題庫還原到 ${fmtTime(m.createdAt)} 的版本（${m.count} 題）？\n目前的題庫會先自動備份，之後仍可以還原回來。`)) return;
+  toast("還原中…", 10000);
+  const ch = await getDocs(collection(db, "bankSnapshots", id, "chunks"));
+  const qs = ch.docs.sort((a, b) => +a.id - +b.id).flatMap((d) => d.data().qs || []);
+  if (qs.length !== m.count) { toast("備份資料不完整，已取消還原", 5000); return; }
+  await createSnapshot(`還原前自動備份（還原到 ${fmtTime(m.createdAt)}）`);
+  const keep = new Set(qs.map((q) => q.id));
+  const ops = [
+    ...S.bank.filter((q) => !keep.has(q.id)).map((q) => (b) => b.delete(doc(db, "questions", q.id))),
+    ...qs.map((q) => (b) => b.set(doc(db, "questions", q.id), q))
+  ];
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = writeBatch(db);
+    ops.slice(i, i + 400).forEach((op) => op(b));
+    await b.commit();
+  }
+  S.bank = qs.sort((a, b) => a.id.localeCompare(b.id));
+  await bumpVersion();
+  toast(`已還原到 ${fmtTime(m.createdAt)} 的版本`);
+  renderAdmin();
+}
+$("snap-list").onclick = async (e) => {
+  const b = e.target.closest("[data-restore]");
+  if (!b) return;
+  try { await restoreSnapshot(b.dataset.restore); } catch (err) { toast("還原失敗：" + errMsg(err), 5000); }
+};
+$("snap-manual").onclick = async () => {
+  const note = prompt("備份說明（例如：第二批審題完成）", "手動備份");
+  if (note === null) return;
+  try { await createSnapshot(note || "手動備份"); toast("已建立備份"); renderSnapshots(); }
+  catch (e) { toast("備份失敗：" + errMsg(e), 5000); }
 };
 
 /* ---------- 管理：題庫 ---------- */
@@ -544,6 +739,8 @@ $("imp-go").onclick = async () => {
   if (!confirm(`將匯入 ${qs.length} 題（其中 ${dup} 題 id 已存在，會被更新）。繼續？`)) return;
   try {
     $("imp-go").disabled = true;
+    impMsg("備份目前題庫中…");
+    await createSnapshot(`匯入前自動備份（匯入 ${qs.length} 題：新增 ${qs.length - dup}、更新 ${dup}）`);
     for (let i = 0; i < qs.length; i += 400) {
       const b = writeBatch(db);
       qs.slice(i, i + 400).forEach((q) => b.set(doc(db, "questions", q.id), q));
@@ -554,7 +751,8 @@ $("imp-go").onclick = async () => {
     qs.forEach((q) => map.set(q.id, q));
     S.bank = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
     await bumpVersion();
-    impMsg(`完成：新增 ${qs.length - dup} 題、更新 ${dup} 題。`);
+    impMsg(`完成：新增 ${qs.length - dup} 題、更新 ${dup} 題。匯入前的題庫已備份，可在「題庫版本紀錄」還原。`);
+    renderSnapshots();
     $("imp-text").value = ""; $("imp-file").value = "";
     $("adm-count").textContent = S.bank.length;
     renderQList();
@@ -592,11 +790,12 @@ $("adm-qlist").onclick = async (e) => {
   const del = e.target.closest("[data-qdel]");
   if (del && confirm(`刪除題目 ${del.dataset.qdel}？`)) {
     try {
+      await createSnapshot(`刪除 ${del.dataset.qdel} 前自動備份`);
       await deleteDoc(doc(db, "questions", del.dataset.qdel));
       S.bank = S.bank.filter((q) => q.id !== del.dataset.qdel);
       await bumpVersion();
       $("adm-count").textContent = S.bank.length;
-      renderQList(); toast("已刪除");
+      renderQList(); renderSnapshots(); toast("已刪除");
     } catch (err) { toast("失敗：" + errMsg(err)); }
   }
 };
@@ -636,6 +835,7 @@ $("ed-save").onclick = async () => {
   if (r) { $("ed-err").textContent = r; return; }
   if (!editing && S.bank.some((x) => x.id === q.id)) { $("ed-err").textContent = "這個 id 已經存在"; return; }
   try {
+    await createSnapshot(`${editing ? "編輯" : "新增"} ${q.id} 前自動備份`);
     await setDoc(doc(db, "questions", q.id), q);
     const i = S.bank.findIndex((x) => x.id === q.id);
     if (i >= 0) S.bank[i] = q; else S.bank.push(q);
@@ -643,6 +843,6 @@ $("ed-save").onclick = async () => {
     await bumpVersion();
     $("dlg-edit").close();
     $("adm-count").textContent = S.bank.length;
-    renderQList(); toast("已儲存");
+    renderQList(); renderSnapshots(); toast("已儲存");
   } catch (e) { $("ed-err").textContent = "儲存失敗：" + errMsg(e); }
 };

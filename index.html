@@ -64,25 +64,28 @@
       </details>
     </div>
 
+
     <div class="card">
-      <h2>開始練習</h2>
+      <h2>開始做題</h2>
       <form id="form-setup">
         <fieldset>
-          <legend>範圍</legend>
+          <legend><b>① 這次要複習哪些科目？</b> <span class="muted small">（可複選，紅字為該科錯題數）</span></legend>
           <div id="cat-boxes" class="chips"></div>
           <div class="row small">
             <button type="button" class="link" id="cat-all">全選</button>
             <button type="button" class="link" id="cat-none">全不選</button>
           </div>
         </fieldset>
+        <fieldset>
+          <legend><b>② 出哪些題目？</b></legend>
+          <div class="seg" id="setup-filter-group">
+            <label><input type="radio" name="filter" value="all" checked> 全部題目</label>
+            <label><input type="radio" name="filter" value="new"> 只出沒做過的</label>
+            <label><input type="radio" name="filter" value="wrong"> 錯題複習 <span class="muted small">只出上次答錯的，答對就自動移出錯題本</span></label>
+          </div>
+        </fieldset>
+        <legend><b>③ 題數與模式</b></legend>
         <div class="grid2">
-          <label>題目來源
-            <select id="setup-filter">
-              <option value="all">全部題目</option>
-              <option value="new">只出沒做過的</option>
-              <option value="wrong">只出錯題（上次答錯）</option>
-            </select>
-          </label>
           <label>題數
             <select id="setup-count">
               <option>10</option><option selected>20</option><option>50</option><option>100</option>
@@ -99,9 +102,37 @@
     </div>
 
     <div class="card">
+      <h2>錯題本 <span class="muted small" id="wrong-total"></span></h2>
+      <p class="muted small">瀏覽所有答錯的題目與詳解，可依科目篩選，也可以把已經會的題目移出。</p>
+      <button id="wrong-book-open">打開錯題本</button>
+    </div>
+
+    <div class="card">
       <h2>最近紀錄</h2>
       <ul id="recent" class="list"></ul>
     </div>
+  </section>
+
+  <!-- 錯題本 -->
+  <section id="view-wrong" class="view" hidden>
+    <div class="card">
+      <h2>錯題本</h2>
+      <div class="grid2">
+        <label>科目<select id="wb-cat"></select></label>
+        <label>排序
+          <select id="wb-sort">
+            <option value="recent">最近答錯的在前</option>
+            <option value="most">答錯次數多的在前</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <button class="primary" id="wb-review">複習這些錯題</button>
+        <span class="muted small" id="wb-count"></span>
+      </div>
+      <div id="wb-list"></div>
+    </div>
+    <button class="wide" data-go="home">回首頁</button>
   </section>
 
   <!-- 作答 -->
@@ -131,7 +162,8 @@
   <!-- 結果 -->
   <section id="view-result" class="view" hidden>
     <div class="card">
-      <h2>成績</h2>
+      <h2 id="result-title">成績</h2>
+      <p id="result-note" class="muted small" hidden></p>
       <div id="result-score" class="score"></div>
       <table id="result-cats" class="tbl"></table>
     </div>
@@ -173,6 +205,11 @@
       </div>
       <pre id="imp-msg" class="msg"></pre>
 
+      <h3>題庫版本紀錄</h3>
+      <p class="muted small">每次匯入、編輯、刪除題目前都會自動備份，保留最近 20 份。還原前也會先備份目前的題庫，所以還原之後仍可以再還原回來。</p>
+      <div class="row"><button id="snap-manual">手動建立備份</button></div>
+      <table id="snap-list" class="tbl"></table>
+
       <h3>瀏覽 / 編輯</h3>
       <div class="grid2">
         <select id="adm-cat"></select>
@@ -182,6 +219,17 @@
     </div>
   </section>
 </main>
+
+<footer class="footer">
+  <span id="footer-text"></span>
+  <button class="link small" id="btn-changelog">版本資訊</button>
+</footer>
+
+<dialog id="dlg-changelog">
+  <h2>版本資訊</h2>
+  <div id="changelog"></div>
+  <div class="row"><button class="primary" id="changelog-close">關閉</button></div>
+</dialog>
 
 <!-- 單題編輯 -->
 <dialog id="dlg-edit">

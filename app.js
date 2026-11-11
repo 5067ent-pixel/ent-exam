@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection,
-  query, orderBy, limit, writeBatch, serverTimestamp, FieldPath
+  query, orderBy, limit, writeBatch, serverTimestamp, FieldPath, deleteField
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -24,13 +24,33 @@ const CATS = {
 };
 const LETTERS = "ABCDEF";
 const BANK_KEY = "ent-bank-v1";
+const PREF_KEY = "ent-prefs-v1";
 const SEC_PER_Q = 60; // 模擬考每題秒數
 const SNAP_KEEP = 20;  // 題庫備份保留份數
 const SNAP_CHUNK = 150; // 每個備份分塊的題數（Firestore 單一文件上限 1 MB）
+// 教科書全名（題目 source 寫 "Scott-Brown 8e, Vol 2, Ch 45" 時展開）
+const SB_FULL = "Scott-Brown's Otorhinolaryngology and Head and Neck Surgery, 8th ed. (2018)";
+const SB_VOL = {
+  "1": "Vol 1: Basic Sciences, Endocrine Surgery, Rhinology",
+  "2": "Vol 2: Paediatrics, The Ear, and Skull Base Surgery",
+  "3": "Vol 3: Head and Neck Surgery, Plastic Surgery"
+};
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.3.0";
 const CHANGELOG = [
+  { v: "1.3.0", date: "2026-11-11", notes: [
+    "參考資料新增「📄 開啟本章 PDF」：直接在 Google Drive 找到這題出處的那一章（需有該資料夾的檢視權限）",
+    "參考資料可顯示「📍 本題依據」：頁碼、段落標題或 KEY POINTS 第幾點；管理者可在題目編輯器填寫"
+  ]},
+  { v: "1.2.0", date: "2026-11-11", notes: [
+    "詳解可開關：關閉時作答後只顯示對錯，需要時再點開詳解（設定會記住，換裝置也一樣）",
+    "每題詳解下方列出教科書參考資料（Scott-Brown 冊別、章號、章名），方便回書查閱",
+    "新增星號：做題、錯題本、成績檢討都可以按 ☆ 收藏題目",
+    "星號題目可放進自己建立的群組，群組可新增、改名、刪除；一題可放多個群組",
+    "首頁出題可選「★ 星號題目」並指定群組",
+    "管理者：題目可加「其他參考資料」（指引、期刊、網址）"
+  ]},
   { v: "1.1.0", date: "2026-11-11", notes: [
     "做題前可複選這次要複習的科目，並選擇「全部／沒做過／錯題複習」",
     "新增錯題本：依科目瀏覽錯題、看詳解、手動移出已會的題目",
@@ -49,7 +69,11 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 /* ---------- 狀態 ---------- */
-const S = { user: null, admin: false, bank: [], bankMeta: null, progress: {}, quiz: null, timer: null, registering: false };
+// stars: { [qid]: { t, g: [groupId] } }；groups: { [gid]: { name, t } }
+const S = {
+  user: null, admin: false, bank: [], bankMeta: null, progress: {}, quiz: null, timer: null, registering: false,
+  stars: {}, groups: {}, prefs: { expl: true }
+};
 
 /* ---------- 小工具 ---------- */
 const $ = (id) => document.getElementById(id);
@@ -58,6 +82,7 @@ const fmt = (s) => esc(s).replace(/\n/g, "<br>");
 const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "—");
 // 錯題：最近一次答錯，且沒有被手動移出錯題本
 const isWrong = (p) => !!p && p.last === false && !p.m;
+const shortStem = (q, n) => esc(q.stem.replace(/\s+/g, " ").slice(0, n)) + (q.stem.length > n ? "…" : "");
 function show(name) {
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
   window.scrollTo(0, 0);
@@ -84,6 +109,12 @@ function errMsg(e) {
     "permission-denied": "沒有權限（帳號未受邀或 Email 尚未驗證）"
   };
   return m[e?.code] || e?.message || String(e);
+}
+// 寫入自己的 users/{uid} 文件（args 為 FieldPath, value 交錯）
+async function saveUser(...args) {
+  if (!S.user || !args.length) return;
+  try { await updateDoc(doc(db, "users", S.user.uid), ...args); }
+  catch (e) { console.error(e); toast("儲存失敗：" + errMsg(e)); }
 }
 
 /* ---------- 登入 / 註冊 ---------- */
@@ -162,7 +193,7 @@ $("btn-logout").onclick = async () => {
 
 async function handleUser(u) {
   S.user = u;
-  if (!u) { $("nav").hidden = true; show("auth"); return; }
+  if (!u) { $("nav").hidden = true; S.stars = {}; S.groups = {}; show("auth"); return; }
   if (S.registering) return;
   if (!u.emailVerified) {
     $("verify-email").textContent = u.email;
@@ -181,7 +212,12 @@ async function handleUser(u) {
     const uref = doc(db, "users", u.uid);
     await setDoc(uref, { email, lastLogin: serverTimestamp() }, { merge: true });
     const snap = await getDoc(uref);
-    S.progress = snap.data()?.progress || {};
+    const d = snap.data() || {};
+    S.progress = d.progress || {};
+    S.stars = d.starred || {};
+    S.groups = d.groups || {};
+    S.prefs = { expl: true, ...readLocalPrefs(), ...(d.prefs || {}) };
+    syncPrefUI();
     await loadBank();
     $("nav").hidden = false;
     $("nav-admin").hidden = !S.admin;
@@ -193,6 +229,23 @@ async function handleUser(u) {
   }
 }
 onAuthStateChanged(auth, handleUser);
+
+/* ---------- 偏好設定：詳解開關 ---------- */
+function readLocalPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } }
+function syncPrefUI() {
+  document.querySelectorAll(".pref-expl").forEach((i) => (i.checked = !!S.prefs.expl));
+}
+function setExplPref(v) {
+  S.prefs.expl = v;
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(S.prefs)); } catch {}
+  syncPrefUI();
+  document.querySelectorAll("details.expl-box").forEach((d) => (d.open = v));
+  saveUser(new FieldPath("prefs", "expl"), v);
+}
+document.addEventListener("change", (e) => {
+  if (e.target.classList?.contains("pref-expl")) setExplPref(e.target.checked);
+});
+syncPrefUI();
 
 /* ---------- 題庫載入（有版本快取，避免每次都重抓） ---------- */
 function readCache() { try { return JSON.parse(localStorage.getItem(BANK_KEY)); } catch { return null; } }
@@ -246,6 +299,7 @@ function go(name) {
   if (name === "home") { S.quiz = null; renderHome(); show("home"); }
   if (name === "admin" && S.admin) { S.quiz = null; renderAdmin(); }
   if (name === "wrong") { S.quiz = null; renderWrongBook(); show("wrong"); }
+  if (name === "starred") { S.quiz = null; renderStarred(); show("starred"); }
 }
 document.addEventListener("click", (e) => {
   const g = e.target.closest("[data-go]");
@@ -254,10 +308,251 @@ document.addEventListener("click", (e) => {
   go(g.dataset.go);
 });
 
+/* ---------- 詳解與參考資料 ---------- */
+function linkify(s) {
+  return esc(s).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+}
+function refList(q) {
+  const out = [];
+  const m = /Scott-Brown\s*8e\s*,\s*Vol\s*(\d)\s*,\s*Ch\s*([0-9]+[a-z]?)/i.exec(q.source || "");
+  if (m) {
+    out.push(`${SB_FULL}. ${SB_VOL[m[1]] || "Vol " + m[1]}. Chapter ${m[2]}${q.chapter ? `: ${q.chapter}` : ""}.`);
+  } else if (q.source) {
+    out.push(q.source + (q.chapter ? `：${q.chapter}` : ""));
+  } else if (q.chapter) {
+    out.push(q.chapter);
+  }
+  if ((q.tags || []).includes("AJCC v9 註記")) out.push("AJCC Cancer Staging System, Version 9（American College of Surgeons）— 詳解中的第 9 版更新註記");
+  for (const r of q.refs || []) if (r) out.push(r);
+  return out;
+}
+// 單章 PDF 檔名為 Vol{冊}_Ch{三位章號}_{章名}.pdf，用 Drive 搜尋檔名開頭找到該章
+function chapterKey(q) {
+  const m = /Scott-Brown\s*8e\s*,\s*Vol\s*(\d)\s*,\s*Ch\s*([0-9]+)([a-z]?)/i.exec(q.source || "");
+  return m ? `Vol${m[1]}_Ch${m[2].padStart(3, "0")}${m[3].toLowerCase()}` : "";
+}
+function pdfHTML(q) {
+  const k = chapterKey(q);
+  if (!k) return "";
+  const url = "https://drive.google.com/drive/search?q=" + encodeURIComponent(k);
+  return `<div class="pdf-link"><a href="${url}" target="_blank" rel="noopener">📄 開啟本章 PDF（Google Drive：${k}）</a></div>`;
+}
+// 本題依據的段落（頁碼、段落標題、KEY POINTS 第幾點），不含原文
+function locHTML(q) {
+  const loc = (q.loc || []).filter(Boolean);
+  if (!loc.length) return "";
+  return `<div class="loc"><b>📍 本題依據</b><ul>${loc.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></div>`;
+}
+function refHTML(q) {
+  const refs = refList(q);
+  if (!refs.length) return "";
+  return `<div class="refs"><div class="refs-h">📖 參考資料</div><ul>${refs.map((r) => `<li>${linkify(r)}</li>`).join("")}</ul>${locHTML(q)}${pdfHTML(q)}</div>`;
+}
+function explBlock(q) {
+  return `<details class="expl-box" ${S.prefs.expl ? "open" : ""}><summary>詳解與參考資料</summary>` +
+    `<div class="expl">${fmt(q.explanation || "（尚無詳解）")}</div>${refHTML(q)}</details>`;
+}
+function feedbackHTML(q, sel) {
+  const ok = sel === q.answer;
+  return `<div class="verdict ${ok ? "ok" : "bad"}">${ok ? "答對了" : `答錯了，正解是 ${LETTERS[q.answer]}`}</div>` +
+    explBlock(q) +
+    (q.reviewed ? "" : `<div class="src">⚠ 本題尚未經審題，如有疑問請回報管理員</div>`);
+}
+
+/* ---------- 星號與群組 ---------- */
+const isStar = (id) => !!S.stars[id];
+function starBtn(id) {
+  const on = isStar(id);
+  return `<button type="button" class="star ${on ? "on" : ""}" data-star="${esc(id)}" title="${on ? "取消星號" : "加星號"}" aria-label="${on ? "取消星號" : "加星號"}">${on ? "★" : "☆"}</button>`;
+}
+function groupTags(id) {
+  const g = (S.stars[id]?.g || []).filter((x) => S.groups[x]);
+  return g.map((x) => `<span class="gtag">${esc(S.groups[x].name)}</span>`).join("");
+}
+function sortedGroups() {
+  return Object.entries(S.groups).sort((a, b) => (a[1].t || 0) - (b[1].t || 0));
+}
+function inStarSel(id, sel) {
+  const s = S.stars[id];
+  if (!s) return false;
+  if (sel === "all") return true;
+  if (sel === "none") return !(s.g || []).some((x) => S.groups[x]);
+  return (s.g || []).includes(sel);
+}
+function refreshStarUI() {
+  document.querySelectorAll("[data-star]").forEach((b) => {
+    const on = isStar(b.dataset.star);
+    b.classList.toggle("on", on);
+    b.textContent = on ? "★" : "☆";
+    b.title = on ? "取消星號" : "加星號";
+  });
+  if (S.quiz && !$("view-quiz").hidden) renderQuizStar();
+  if (!$("view-starred").hidden) renderStarred();
+  if (!$("view-home").hidden) renderStarTotal();
+}
+function toggleStar(id) {
+  if (isStar(id)) {
+    const hasG = (S.stars[id].g || []).length;
+    if (hasG && !confirm("取消星號後，這題也會從所有群組中移除。確定嗎？")) return;
+    delete S.stars[id];
+    saveUser(new FieldPath("starred", id), deleteField());
+    toast("已取消星號");
+  } else {
+    S.stars[id] = { t: Date.now(), g: [] };
+    saveUser(new FieldPath("starred", id), S.stars[id]);
+    toast(Object.keys(S.groups).length ? "已加星號，可按「分類」放進群組" : "已加星號");
+  }
+  refreshStarUI();
+}
+document.addEventListener("click", (e) => {
+  const s = e.target.closest("[data-star]");
+  const g = e.target.closest("[data-grp]");
+  if (!s && !g) return;
+  e.preventDefault(); e.stopPropagation(); // 按鈕在 <summary> 裡時不要展開/收合
+  if (s) toggleStar(s.dataset.star);
+  else openGroupPicker(g.dataset.grp);
+}, true);
+
+// 群組分類對話框
+let grpFor = null;
+function renderGroupBoxes(checked) {
+  const gs = sortedGroups();
+  $("grp-boxes").innerHTML = gs.length
+    ? gs.map(([gid, g]) => `<label><input type="checkbox" value="${esc(gid)}" ${checked.has(gid) ? "checked" : ""}> ${esc(g.name)}</label>`).join("")
+    : `<span class="muted small">還沒有群組，請在下方輸入名稱新增。</span>`;
+}
+function openGroupPicker(id) {
+  const q = S.bank.find((x) => x.id === id);
+  if (!q) return;
+  grpFor = id;
+  $("grp-q").textContent = q.stem.replace(/\s+/g, " ").slice(0, 70) + (q.stem.length > 70 ? "…" : "");
+  $("grp-save").textContent = isStar(id) ? "儲存" : "儲存並加星號";
+  $("grp-new").value = "";
+  renderGroupBoxes(new Set(S.stars[id]?.g || []));
+  $("dlg-groups").showModal();
+}
+function createGroup(name) {
+  name = name.trim();
+  if (!name) return null;
+  if (Object.values(S.groups).some((g) => g.name === name)) { toast("已經有同名的群組"); return null; }
+  const gid = "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  S.groups[gid] = { name, t: Date.now() };
+  saveUser(new FieldPath("groups", gid), S.groups[gid]);
+  return gid;
+}
+$("grp-add").onclick = () => {
+  const checked = new Set([...$("grp-boxes").querySelectorAll("input:checked")].map((i) => i.value));
+  const gid = createGroup($("grp-new").value);
+  if (!gid) return;
+  checked.add(gid);
+  $("grp-new").value = "";
+  renderGroupBoxes(checked);
+};
+$("grp-new").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("grp-add").click(); } };
+$("grp-cancel").onclick = () => $("dlg-groups").close();
+$("grp-save").onclick = () => {
+  const id = grpFor;
+  const g = [...$("grp-boxes").querySelectorAll("input:checked")].map((i) => i.value);
+  S.stars[id] = { t: S.stars[id]?.t || Date.now(), g };
+  saveUser(new FieldPath("starred", id), S.stars[id]);
+  $("dlg-groups").close();
+  toast(g.length ? `已放進 ${g.length} 個群組` : "已加星號（未分類）");
+  refreshStarUI();
+};
+
+/* ---------- 星號題目頁 ---------- */
+let svSel = "all";
+function starredList(sel) {
+  return S.bank.filter((q) => inStarSel(q.id, sel)).sort((a, b) => (S.stars[b.id].t || 0) - (S.stars[a.id].t || 0));
+}
+function renderStarTotal() {
+  const n = S.bank.filter((q) => isStar(q.id)).length;
+  const g = Object.keys(S.groups).length;
+  $("star-total").textContent = n ? `（共 ${n} 題${g ? `，${g} 個群組` : ""}）` : "（目前沒有星號題目）";
+}
+function renderStarred() {
+  if (svSel !== "all" && svSel !== "none" && !S.groups[svSel]) svSel = "all";
+  const cnt = (sel) => S.bank.filter((q) => inStarSel(q.id, sel)).length;
+  const chips = [["all", "全部星號"], ["none", "未分類"], ...sortedGroups().map(([gid, g]) => [gid, g.name])];
+  $("sv-groups").innerHTML = chips.map(([k, name]) =>
+    `<button type="button" class="chip ${svSel === k ? "on" : ""}" data-sv="${esc(k)}">${esc(name)} <span class="muted">${cnt(k)}</span></button>`
+  ).join("");
+  const isG = svSel !== "all" && svSel !== "none";
+  $("sv-rename").hidden = !isG;
+  $("sv-delete").hidden = !isG;
+  const list = starredList(svSel);
+  $("sv-count").textContent = `共 ${list.length} 題`;
+  $("sv-practice").disabled = !list.length;
+  $("sv-list").innerHTML = list.map((q) => {
+    const p = S.progress[q.id];
+    const opts = q.options.map((o, k) =>
+      `<div class="ropt ${k === q.answer ? "correct" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${k === q.answer ? "　✓ 正解" : ""}</div>`
+    ).join("");
+    const stat = p ? `作答 ${p.n} 次、答錯 ${p.w} 次${p.last ? "，上次答對" : "，上次答錯"}` : "還沒做過";
+    return `<details class="rq st"><summary>${starBtn(q.id)}<span class="tag">${esc(CATS[q.category] || q.category)}</span> ${shortStem(q, 46)}<br>
+      ${groupTags(q.id)}<span class="muted small">${stat}</span></summary>
+      <p>${fmt(q.stem)}</p>${opts}
+      <div class="feedback">${explBlock(q)}</div>
+      <div class="row"><button class="link" data-grp="${esc(q.id)}">分類到群組</button></div></details>`;
+  }).join("") || `<p class="muted">${svSel === "all" ? "還沒有星號題目。做題時按題目上方的 ☆ 就能收藏。" : "這個群組目前沒有題目。"}</p>`;
+}
+$("sv-groups").onclick = (e) => {
+  const b = e.target.closest("[data-sv]");
+  if (!b) return;
+  svSel = b.dataset.sv;
+  renderStarred();
+};
+$("sv-new").onclick = () => {
+  const name = prompt("新群組名稱（例如：NPC 必考、待問主治）");
+  if (name == null) return;
+  const gid = createGroup(name);
+  if (gid) { svSel = gid; renderStarred(); toast("已新增群組，做題時按「分類」就能把題目放進來"); }
+};
+$("sv-rename").onclick = () => {
+  const g = S.groups[svSel];
+  if (!g) return;
+  const name = prompt("群組新名稱", g.name);
+  if (name == null || !name.trim() || name.trim() === g.name) return;
+  if (Object.values(S.groups).some((x) => x.name === name.trim())) { toast("已經有同名的群組"); return; }
+  g.name = name.trim();
+  saveUser(new FieldPath("groups", svSel, "name"), g.name);
+  renderStarred();
+};
+$("sv-delete").onclick = () => {
+  const gid = svSel, g = S.groups[gid];
+  if (!g) return;
+  const n = Object.values(S.stars).filter((s) => (s.g || []).includes(gid)).length;
+  if (!confirm(`刪除群組「${g.name}」？\n裡面的 ${n} 題仍會保留星號，只是不再屬於這個群組。`)) return;
+  delete S.groups[gid];
+  const args = [new FieldPath("groups", gid), deleteField()];
+  for (const [qid, s] of Object.entries(S.stars)) {
+    if ((s.g || []).includes(gid)) {
+      s.g = s.g.filter((x) => x !== gid);
+      args.push(new FieldPath("starred", qid, "g"), s.g);
+    }
+  }
+  saveUser(...args);
+  svSel = "all";
+  renderStarred();
+  toast("已刪除群組");
+};
+$("sv-practice").onclick = () => {
+  const list = starredList(svSel);
+  if (!list.length) return;
+  startQuiz(shuffle(list.slice()).slice(0, 100), "practice", "starred");
+};
+
 /* ---------- 首頁 ---------- */
 function catOptionsHTML(withAll) {
   return (withAll ? `<option value="all">全部範圍</option>` : "") +
     Object.entries(CATS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+}
+function renderSetupGroups() {
+  const sel = $("setup-group"), prev = sel.value || "all";
+  sel.innerHTML = `<option value="all">全部星號題目</option><option value="none">未分類</option>` +
+    sortedGroups().map(([gid, g]) => `<option value="${esc(gid)}">${esc(g.name)}</option>`).join("");
+  sel.value = [...sel.options].some((o) => o.value === prev) ? prev : "all";
+  $("setup-group-wrap").hidden = setupFilter() !== "starred";
 }
 function renderHome() {
   const per = {};
@@ -281,6 +576,7 @@ function renderHome() {
     ).join("");
 
   $("wrong-total").textContent = wrong ? `（共 ${wrong} 題）` : "（目前沒有錯題）";
+  renderStarTotal();
 
   // 範圍選擇（保留原本勾選）
   const box = $("cat-boxes");
@@ -289,17 +585,21 @@ function renderHome() {
   box.innerHTML = Object.entries(CATS).map(([k, v]) =>
     `<label><input type="checkbox" value="${k}" ${first || prev.has(k) ? "checked" : ""}> ${v} <span class="muted">${per[k].total}</span>${per[k].wrong ? ` <span class="wrong-n">錯${per[k].wrong}</span>` : ""}</label>`
   ).join("");
+  renderSetupGroups();
+  syncPrefUI();
   updatePoolInfo();
   renderRecent();
 }
 function buildPool() {
   const cats = [...document.querySelectorAll("#cat-boxes input:checked")].map((i) => i.value);
   const f = setupFilter();
+  const gsel = $("setup-group").value || "all";
   return S.bank.filter((q) => {
     if (!cats.includes(q.category)) return false;
     const p = S.progress[q.id];
     if (f === "new") return !p;
     if (f === "wrong") return isWrong(p);
+    if (f === "starred") return inStarSel(q.id, gsel);
     return true;
   });
 }
@@ -340,11 +640,10 @@ function renderWrongBook() {
     const opts = q.options.map((o, k) =>
       `<div class="ropt ${k === q.answer ? "correct" : k === p.sel ? "wrong" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${k === p.sel ? "　← 你上次的答案" : ""}${k === q.answer ? "　✓ 正解" : ""}</div>`
     ).join("");
-    const head = esc(q.stem.replace(/\s+/g, " ").slice(0, 46)) + (q.stem.length > 46 ? "…" : "");
-    return `<details class="rq bad"><summary><span class="tag">${esc(CATS[q.category] || q.category)}</span> ${head}<br><span class="muted small">答錯 ${p.w} 次／共作答 ${p.n} 次</span></summary>
+    return `<details class="rq bad"><summary>${starBtn(q.id)}<span class="tag">${esc(CATS[q.category] || q.category)}</span> ${shortStem(q, 46)}<br><span class="muted small">答錯 ${p.w} 次／共作答 ${p.n} 次</span></summary>
       <p>${fmt(q.stem)}</p>${opts}
-      <div class="feedback"><div class="expl">${fmt(q.explanation || "（尚無詳解）")}</div>${q.source ? `<div class="src">出處：${esc(q.source)}</div>` : ""}</div>
-      <div class="row"><button class="link" data-master="${esc(q.id)}">我已經會了，移出錯題本</button></div></details>`;
+      <div class="feedback">${explBlock(q)}</div>
+      <div class="row"><button class="link" data-master="${esc(q.id)}">我已經會了，移出錯題本</button><button class="link" data-grp="${esc(q.id)}">★ 分類到群組</button></div></details>`;
   }).join("") || `<p class="muted">這個範圍沒有錯題。</p>`;
 }
 $("wb-cat").onchange = renderWrongBook;
@@ -362,7 +661,11 @@ $("wb-list").onclick = async (e) => {
 function updatePoolInfo() { $("pool-info").textContent = `符合條件的題目：${buildPool().length} 題`; }
 $("cat-boxes").onchange = updatePoolInfo;
 const setupFilter = () => document.querySelector("input[name=filter]:checked").value;
-$("setup-filter-group").onchange = updatePoolInfo;
+$("setup-filter-group").onchange = () => {
+  $("setup-group-wrap").hidden = setupFilter() !== "starred";
+  updatePoolInfo();
+};
+$("setup-group").onchange = updatePoolInfo;
 $("cat-all").onclick = () => { document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = true)); updatePoolInfo(); };
 $("cat-none").onclick = () => { document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = false)); updatePoolInfo(); };
 
@@ -385,11 +688,12 @@ $("form-setup").onsubmit = (e) => {
   if (!pool.length) { toast("沒有符合條件的題目"); return; }
   const n = +$("setup-count").value;
   const mode = document.querySelector("input[name=mode]:checked").value;
-  if (setupFilter() === "wrong") {
+  const f = setupFilter();
+  if (f === "wrong") {
     // 錯題複習：答錯次數多的優先
     const qs = shuffle(pool.slice()).sort((a, b) => (S.progress[b.id].w || 0) - (S.progress[a.id].w || 0)).slice(0, n);
     startQuiz(qs, mode, "review");
-  } else startQuiz(shuffle(pool.slice()).slice(0, n), mode);
+  } else startQuiz(shuffle(pool.slice()).slice(0, n), mode, f === "starred" ? "starred" : "normal");
 };
 
 function startQuiz(qs, mode, kind = "normal") {
@@ -401,24 +705,25 @@ function startQuiz(qs, mode, kind = "normal") {
   $("quiz-timer").textContent = "";
   $("quiz-grid").hidden = mode !== "exam";
   $("quiz-finish").hidden = mode !== "exam";
+  $("quiz-expl-wrap").hidden = mode === "exam";
+  syncPrefUI();
   if (mode === "exam") { S.quiz.deadline = Date.now() + qs.length * SEC_PER_Q * 1000; startTimer(); }
   renderQ(); show("quiz");
 }
 
-function feedbackHTML(q, sel) {
-  const ok = sel === q.answer;
-  return `<div class="verdict ${ok ? "ok" : "bad"}">${ok ? "答對了" : `答錯了，正解是 ${LETTERS[q.answer]}`}</div>` +
-    `<div class="expl">${fmt(q.explanation || "（尚無詳解）")}</div>` +
-    (q.source ? `<div class="src">出處：${esc(q.source)}</div>` : "") +
-    (q.reviewed ? "" : `<div class="src">⚠ 本題尚未經審題，如有疑問請回報管理員</div>`);
+function renderQuizStar() {
+  const q = S.quiz.qs[S.quiz.i];
+  $("quiz-star").innerHTML = `${starBtn(q.id)}<button type="button" class="link small" data-grp="${esc(q.id)}">分類</button> ${groupTags(q.id)}`;
 }
 
 function renderQ() {
   const Q = S.quiz, q = Q.qs[Q.i], sel = Q.answers[Q.i];
   const rev = Q.mode === "practice" && Q.revealed[Q.i];
   const last = Q.i === Q.qs.length - 1;
-  $("quiz-pos").textContent = `${Q.kind === "review" ? "錯題複習　" : ""}第 ${Q.i + 1} / ${Q.qs.length} 題`;
+  const label = { review: "錯題複習　", starred: "★ 星號題目　" }[Q.kind] || "";
+  $("quiz-pos").textContent = `${label}第 ${Q.i + 1} / ${Q.qs.length} 題`;
   $("quiz-cat").textContent = CATS[q.category] || q.category;
+  renderQuizStar();
   $("quiz-stem").innerHTML = fmt(q.stem);
   $("quiz-options").innerHTML = q.options.map((o, k) => {
     let cls = "opt";
@@ -526,7 +831,7 @@ function finishQuiz() {
   if (Q.mode === "exam") recordAnswers(items.map((x) => ({ id: x.q.id, ok: x.ok, sel: x.sel })));
   const correct = items.filter((x) => x.ok).length;
 
-  $("result-title").textContent = Q.kind === "review" ? "錯題複習結果" : "成績";
+  $("result-title").textContent = Q.kind === "review" ? "錯題複習結果" : Q.kind === "starred" ? "星號題目練習結果" : "成績";
   const note = $("result-note");
   note.hidden = Q.kind !== "review";
   if (Q.kind === "review") {
@@ -548,9 +853,9 @@ function finishQuiz() {
     const opts = x.q.options.map((o, k) =>
       `<div class="ropt ${k === x.q.answer ? "correct" : k === x.sel ? "wrong" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${k === x.sel ? "　← 你的答案" : ""}</div>`
     ).join("");
-    const head = esc(x.q.stem.replace(/\s+/g, " ").slice(0, 40)) + (x.q.stem.length > 40 ? "…" : "");
-    return `<details class="rq ${x.ok ? "ok" : "bad"}"><summary>${x.ok ? "✓" : "✗"} 第 ${x.n} 題　${head}${x.sel == null ? "（未作答）" : ""}</summary>
-      <p>${fmt(x.q.stem)}</p>${opts}<div class="feedback">${feedbackHTML(x.q, x.sel)}</div></details>`;
+    return `<details class="rq ${x.ok ? "ok" : "bad"}"><summary>${starBtn(x.q.id)}${x.ok ? "✓" : "✗"} 第 ${x.n} 題　${shortStem(x.q, 40)}${x.sel == null ? "（未作答）" : ""}</summary>
+      <p>${fmt(x.q.stem)}</p>${opts}<div class="feedback">${feedbackHTML(x.q, x.sel)}</div>
+      <div class="row"><button class="link" data-grp="${esc(x.q.id)}">★ 分類到群組</button></div></details>`;
   }).join("") || `<p class="muted">沒有作答的題目</p>`;
 
   addDoc(collection(db, "users", S.user.uid, "exams"), {
@@ -700,6 +1005,8 @@ function normQ(q) {
     options: Array.isArray(q.options) ? q.options.map((o) => String(o).trim()) : q.options,
     answer,
     explanation: q.explanation ? String(q.explanation) : "",
+    refs: Array.isArray(q.refs) ? q.refs.map((r) => String(r).trim()).filter(Boolean) : [],
+    loc: Array.isArray(q.loc) ? q.loc.map((r) => String(r).trim()).filter(Boolean) : [],
     difficulty: [1, 2, 3].includes(+q.difficulty) ? +q.difficulty : 2,
     tags: Array.isArray(q.tags) ? q.tags.map(String) : [],
     reviewed: !!q.reviewed
@@ -817,6 +1124,8 @@ function openEditor(q) {
   $("ed-options").value = (q?.options || []).join("\n");
   $("ed-answer").value = String(q?.answer ?? 0);
   $("ed-explanation").value = q?.explanation || "";
+  $("ed-refs").value = (q?.refs || []).join("\n");
+  $("ed-loc").value = (q?.loc || []).join("\n");
   $("ed-reviewed").checked = !!q?.reviewed;
   $("ed-err").textContent = "";
   $("dlg-edit").showModal();
@@ -829,6 +1138,8 @@ $("ed-save").onclick = async () => {
     chapter: $("ed-chapter").value, source: $("ed-source").value, stem: $("ed-stem").value,
     options: $("ed-options").value.split("\n").map((s) => s.trim()).filter(Boolean),
     answer: +$("ed-answer").value, explanation: $("ed-explanation").value,
+    refs: $("ed-refs").value.split("\n"),
+    loc: $("ed-loc").value.split("\n"),
     reviewed: $("ed-reviewed").checked, tags: editing?.tags || []
   });
   const r = validateQ(q);

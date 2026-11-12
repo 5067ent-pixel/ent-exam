@@ -164,3 +164,6 @@ dialog::backdrop { background: rgba(0,0,0,.4); }
 .footer { max-width: 760px; margin: 0 auto; padding: 0 12px 32px; display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: .8rem; }
 .changelog-item { border-bottom: 1px solid var(--line); padding: 8px 0; }
 .changelog-item ul { margin: 4px 0 0; padding-left: 20px; }
+.tbl tr.clickable { cursor: pointer; }
+.tbl tr.clickable:hover td { background: var(--sel); }
+label.inline select { width: auto; display: inline-block; margin-top: 0; }

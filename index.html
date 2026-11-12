@@ -227,6 +227,24 @@
     </div>
 
     <div class="card">
+      <h2>使用者作答情形</h2>
+      <div class="row">
+        <label class="inline small">排序
+          <select id="us-sort">
+            <option value="last">最近作答</option>
+            <option value="ans">已做題數</option>
+            <option value="rate">答對率</option>
+            <option value="email">Email</option>
+          </select>
+        </label>
+        <button id="us-refresh">重新整理</button>
+        <span class="muted small" id="us-count"></span>
+      </div>
+      <p class="muted small">點一位使用者可看各科答對率、最近紀錄與錯題。答對率以每題最近一次作答計算。</p>
+      <table id="us-list" class="tbl"></table>
+    </div>
+
+    <div class="card">
       <h2>題庫（共 <span id="adm-count">0</span> 題）</h2>
       <h3>匯入題目</h3>
       <p class="muted small">選擇 .json 題庫檔（可一次選多個），或直接貼上內容。id 相同的題目會被覆蓋（可用來更新題目）。</p>
@@ -257,8 +275,14 @@
 
 <footer class="footer">
   <span id="footer-text"></span>
-  <button class="link small" id="btn-changelog">版本資訊</button>
+  <button class="link small" id="btn-changelog" hidden>版本資訊</button>
 </footer>
+
+<dialog id="dlg-user">
+  <h2 id="ud-title"></h2>
+  <div id="ud-body"></div>
+  <div class="row"><button class="primary" id="ud-close">關閉</button></div>
+</dialog>
 
 <dialog id="dlg-changelog">
   <h2>版本資訊</h2>

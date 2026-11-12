@@ -37,8 +37,13 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const CHANGELOG = [
+  { v: "1.5.0", date: "2026-11-12", notes: [
+    "管理者：新增「使用者作答情形」，可看每位使用者的作答題數、答對率、錯題數、最近作答時間",
+    "管理者：點開使用者可看各科答對率、最近 10 次練習／模擬考成績與錯題清單",
+    "版本資訊改為只有管理者看得到"
+  ]},
   { v: "1.4.0", date: "2026-11-12", notes: [
     "管理者：匯入時可一次選多個題庫檔",
     "管理者：新增「取代整個題庫」選項，匯入後自動刪除不在檔案裡的舊題（會先備份，可還原）"
@@ -197,7 +202,7 @@ $("btn-logout").onclick = async () => {
 
 async function handleUser(u) {
   S.user = u;
-  if (!u) { $("nav").hidden = true; S.stars = {}; S.groups = {}; show("auth"); return; }
+  if (!u) { $("nav").hidden = true; S.admin = false; $("btn-changelog").hidden = true; S.stars = {}; S.groups = {}; show("auth"); return; }
   if (S.registering) return;
   if (!u.emailVerified) {
     $("verify-email").textContent = u.email;
@@ -225,6 +230,7 @@ async function handleUser(u) {
     await loadBank();
     $("nav").hidden = false;
     $("nav-admin").hidden = !S.admin;
+    $("btn-changelog").hidden = !S.admin;
     renderHome(); renderFooter(); show("home");
   } catch (e) {
     console.error(e);
@@ -289,6 +295,7 @@ function renderFooter() {
   $("footer-text").textContent = t;
 }
 $("btn-changelog").onclick = () => {
+  if (!S.admin) return;
   $("changelog").innerHTML = CHANGELOG.map((c) =>
     `<div class="changelog-item"><b>v${c.v}</b> <span class="muted small">${c.date}</span><ul>${c.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`
   ).join("");
@@ -873,8 +880,96 @@ function finishQuiz() {
 function renderAdmin() {
   $("adm-count").textContent = S.bank.length;
   if (!$("adm-cat").options.length) $("adm-cat").innerHTML = catOptionsHTML(true);
-  renderInvites(); renderQList(); renderSnapshots(); show("admin");
+  renderInvites(); renderUserStats(); renderQList(); renderSnapshots(); show("admin");
 }
+
+/* ---------- 管理：使用者作答情形 ---------- */
+let usersCache = [];
+function userSummary(d) {
+  const prog = d.progress || {};
+  const bankIds = new Set(S.bank.map((q) => q.id));
+  let ans = 0, cor = 0, wrong = 0, total = 0, last = 0;
+  for (const [id, p] of Object.entries(prog)) {
+    if (!bankIds.has(id)) continue;
+    ans++; total += p.n || 0;
+    if (p.last) cor++;
+    if (isWrong(p)) wrong++;
+    if ((p.t || 0) > last) last = p.t;
+  }
+  return { ans, cor, wrong, total, last, stars: Object.keys(d.starred || {}).length };
+}
+async function renderUserStats() {
+  const t = $("us-list");
+  t.innerHTML = `<tr><td class="muted">載入中…</td></tr>`;
+  try {
+    const snap = await getDocs(collection(db, "users"));
+    usersCache = snap.docs.map((d) => ({ uid: d.id, ...d.data() })).map((u) => ({ ...u, sum: userSummary(u) }));
+    const key = $("us-sort").value;
+    usersCache.sort((a, b) => key === "email" ? String(a.email).localeCompare(String(b.email))
+      : key === "ans" ? b.sum.ans - a.sum.ans
+      : key === "rate" ? (b.sum.ans ? b.sum.cor / b.sum.ans : -1) - (a.sum.ans ? a.sum.cor / a.sum.ans : -1)
+      : b.sum.last - a.sum.last);
+    $("us-count").textContent = `共 ${usersCache.length} 位使用者`;
+    t.innerHTML = `<tr><th>使用者</th><th class="num">已做</th><th class="num">答對率</th><th class="num">錯題</th><th class="num">最近作答</th></tr>` +
+      (usersCache.map((u) =>
+        `<tr class="clickable" data-uid="${esc(u.uid)}"><td>${esc(u.email || u.uid)}</td><td class="num">${u.sum.ans}</td>
+         <td class="num">${pct(u.sum.cor, u.sum.ans)}</td><td class="num">${u.sum.wrong}</td>
+         <td class="num small">${u.sum.last ? fmtTime(u.sum.last) : "—"}</td></tr>`
+      ).join("") || `<tr><td colspan="5" class="muted">還沒有使用者登入過。</td></tr>`);
+  } catch (e) {
+    t.innerHTML = `<tr><td class="err">讀取失敗：${esc(errMsg(e))}（請確認 Firestore 規則已更新為 v1.5.0 版）</td></tr>`;
+  }
+}
+async function openUserDetail(uid) {
+  const u = usersCache.find((x) => x.uid === uid);
+  if (!u) return;
+  const prog = u.progress || {};
+  const per = {};
+  for (const k of Object.keys(CATS)) per[k] = { total: 0, ans: 0, cor: 0, wrong: 0 };
+  for (const q of S.bank) {
+    const c = per[q.category] || (per[q.category] = { total: 0, ans: 0, cor: 0, wrong: 0 });
+    c.total++;
+    const p = prog[q.id];
+    if (p) { c.ans++; if (p.last) c.cor++; }
+    if (isWrong(p)) c.wrong++;
+  }
+  const s = u.sum;
+  const wrongQs = S.bank.filter((q) => isWrong(prog[q.id]))
+    .sort((a, b) => (prog[b.id].w - prog[a.id].w) || (prog[b.id].t - prog[a.id].t));
+  $("ud-title").textContent = u.email || u.uid;
+  $("ud-body").innerHTML =
+    `<div class="stats">${[["已做題數", s.ans], ["最近一次答對率", pct(s.cor, s.ans)], ["待複習錯題", s.wrong], ["星號題目", s.stars]]
+      .map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("")}</div>
+     <p class="muted small">累計作答 ${s.total} 次・最近作答 ${s.last ? fmtTime(s.last) : "—"}・最近登入 ${u.lastLogin?.toMillis ? fmtTime(u.lastLogin.toMillis()) : "—"}</p>
+     <h3>各科</h3>
+     <table class="tbl"><tr><th>範圍</th><th class="num">已做/題數</th><th class="num">答對率</th><th class="num">錯題</th></tr>
+     ${Object.entries(per).filter(([, c]) => c.total).map(([k, c]) =>
+       `<tr><td>${esc(CATS[k] || k)}</td><td class="num">${c.ans}/${c.total}</td><td class="num">${pct(c.cor, c.ans)}</td><td class="num">${c.wrong}</td></tr>`).join("")}</table>
+     <h3>最近紀錄</h3><ul class="list" id="ud-exams"><li class="muted">載入中…</li></ul>
+     <h3>錯題（${wrongQs.length} 題，答錯次數多的在前）</h3>
+     ${wrongQs.slice(0, 100).map((q) => {
+       const p = prog[q.id];
+       return `<details class="rq bad"><summary><span class="tag">${esc(CATS[q.category] || q.category)}</span> ${shortStem(q, 40)}<br>
+         <span class="muted small">${esc(q.id)}・答錯 ${p.w} 次／作答 ${p.n} 次・上次選 ${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}，正解 ${LETTERS[q.answer]}</span></summary>
+         <p>${fmt(q.stem)}</p>${q.options.map((o, k) => `<div class="ropt ${k === q.answer ? "correct" : k === p.sel ? "wrong" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}</div>`).join("")}</details>`;
+     }).join("") || `<p class="muted">沒有錯題。</p>`}
+     ${wrongQs.length > 100 ? `<p class="muted small">只顯示前 100 題</p>` : ""}`;
+  $("dlg-user").showModal();
+  try {
+    const ex = await getDocs(query(collection(db, "users", uid, "exams"), orderBy("ts", "desc"), limit(10)));
+    $("ud-exams").innerHTML = ex.empty ? `<li class="muted">還沒有紀錄</li>` : ex.docs.map((d) => {
+      const x = d.data();
+      return `<li>${fmtTime(x.ts)}　${x.mode === "exam" ? "模擬考" : "練習"}　${x.correct}/${x.total}（${pct(x.correct, x.total)}）${x.sec ? `　${Math.round(x.sec / 60)} 分鐘` : ""}</li>`;
+    }).join("");
+  } catch (e) { $("ud-exams").innerHTML = `<li class="err">讀取失敗：${esc(errMsg(e))}</li>`; }
+}
+$("us-list").onclick = (e) => {
+  const r = e.target.closest("[data-uid]");
+  if (r) openUserDetail(r.dataset.uid);
+};
+$("us-sort").onchange = renderUserStats;
+$("us-refresh").onclick = renderUserStats;
+$("ud-close").onclick = () => $("dlg-user").close();
 async function renderInvites() {
   const t = $("inv-list");
   try {

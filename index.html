@@ -15,6 +15,7 @@
     <button class="link" data-go="home">首頁</button>
     <button class="link" data-go="starred">★ 星號</button>
     <button class="link" id="nav-admin" data-go="admin" hidden>管理</button>
+    <button class="link" id="btn-account">帳號</button>
     <button class="link" id="btn-logout">登出</button>
   </nav>
 </header>
@@ -30,8 +31,13 @@
       <h1 id="auth-title">登入</h1>
       <form id="form-auth">
         <label>Email<input type="email" id="auth-email" required autocomplete="email"></label>
-        <label>密碼<input type="password" id="auth-pass" required minlength="6" autocomplete="current-password"></label>
-        <label id="wrap-pass2" hidden>再次輸入密碼<input type="password" id="auth-pass2" minlength="6" autocomplete="new-password"></label>
+        <label>密碼
+          <span class="pw-wrap"><input type="password" id="auth-pass" required minlength="6" autocomplete="current-password"><button type="button" class="pw-eye" data-eye="auth-pass" aria-label="顯示密碼">顯示</button></span>
+        </label>
+        <div id="pw-meter" class="pw-meter" hidden><div class="pw-bar"><span id="pw-bar"></span></div><ul id="pw-rules" class="pw-rules"></ul></div>
+        <label id="wrap-pass2" hidden>再次輸入密碼
+          <span class="pw-wrap"><input type="password" id="auth-pass2" minlength="8" autocomplete="new-password"><button type="button" class="pw-eye" data-eye="auth-pass2" aria-label="顯示密碼">顯示</button></span>
+        </label>
         <button type="submit" class="primary wide" id="auth-submit">登入</button>
       </form>
       <p class="err" id="auth-err"></p>
@@ -305,6 +311,31 @@
   <h2 id="ud-title"></h2>
   <div id="ud-body"></div>
   <div class="row"><button class="primary" id="ud-close">關閉</button></div>
+</dialog>
+
+<!-- 帳號與密碼 -->
+<dialog id="dlg-account">
+  <h2>帳號設定</h2>
+  <p class="small">登入帳號：<b id="acc-email"></b></p>
+  <p class="muted small">密碼由 Firebase Authentication 加密保存，網站與管理員都看不到你的密碼。</p>
+  <form id="form-pw">
+    <h3>變更密碼</h3>
+    <label>目前密碼
+      <span class="pw-wrap"><input type="password" id="pw-old" required autocomplete="current-password"><button type="button" class="pw-eye" data-eye="pw-old" aria-label="顯示密碼">顯示</button></span>
+    </label>
+    <label>新密碼
+      <span class="pw-wrap"><input type="password" id="pw-new" required autocomplete="new-password"><button type="button" class="pw-eye" data-eye="pw-new" aria-label="顯示密碼">顯示</button></span>
+    </label>
+    <div class="pw-meter"><div class="pw-bar"><span id="pw-new-bar"></span></div><ul id="pw-new-rules" class="pw-rules"></ul></div>
+    <label>再次輸入新密碼
+      <span class="pw-wrap"><input type="password" id="pw-new2" required autocomplete="new-password"><button type="button" class="pw-eye" data-eye="pw-new2" aria-label="顯示密碼">顯示</button></span>
+    </label>
+    <p class="err" id="pw-err"></p>
+    <div class="row between">
+      <button type="button" id="acc-close">關閉</button>
+      <button type="submit" class="primary" id="pw-save">更新密碼</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="dlg-changelog">

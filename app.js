@@ -1,7 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendEmailVerification, sendPasswordResetEmail, signOut
+  sendEmailVerification, sendPasswordResetEmail, signOut,
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection,
@@ -51,8 +52,14 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 const CHANGELOG = [
+  { v: "1.7.0", date: "2026-11-12", notes: [
+    "新密碼規則：至少 8 個字元、含英文字母與數字、不可包含 Email 帳號名稱或常見密碼，註冊時即時顯示強度",
+    "密碼欄可按「顯示／隱藏」",
+    "新增「帳號」頁：可變更密碼，需先輸入目前密碼重新驗證",
+    "送出登入或註冊後自動清空密碼欄"
+  ]},
   { v: "1.6.0", date: "2026-11-12", notes: [
     "全新介面：Noto Sans TC 字體、圓角卡片、深藍綠主色",
     "首頁主卡：完成進度環、答對率、待複習錯題、連續練習天數，一鍵「繼續練習」（優先出沒做過的題）",
@@ -133,9 +140,12 @@ function errMsg(e) {
     "auth/wrong-password": "Email 或密碼錯誤",
     "auth/user-not-found": "Email 或密碼錯誤",
     "auth/email-already-in-use": "這個 Email 已註冊，請直接登入",
-    "auth/weak-password": "密碼至少 6 個字元",
+    "auth/weak-password": "密碼強度不足：至少 8 個字元，需包含英文字母與數字",
     "auth/invalid-email": "Email 格式不正確",
-    "auth/too-many-requests": "嘗試太多次，請稍後再試",
+    "auth/too-many-requests": "嘗試太多次，帳號暫時鎖定，請稍後再試或用「忘記密碼」重設",
+    "auth/password-does-not-meet-requirements": "密碼不符合規定：至少 8 個字元，需包含英文字母與數字",
+    "auth/requires-recent-login": "為了安全，請先登出再重新登入後再試",
+    "auth/missing-password": "請輸入密碼",
     "auth/network-request-failed": "網路連線失敗",
     "permission-denied": "沒有權限（帳號未受邀或 Email 尚未驗證）"
   };
@@ -148,6 +158,43 @@ async function saveUser(...args) {
   catch (e) { console.error(e); toast("儲存失敗：" + errMsg(e)); }
 }
 
+/* ---------- 密碼規則 ---------- */
+// 新密碼：至少 8 字元、含英文字母與數字、不能包含 Email 帳號名稱
+const COMMON_PW = ["12345678", "123456789", "password", "password1", "qwerty123", "11111111", "abc12345", "a1234567", "iloveyou"];
+function pwChecks(pw, email) {
+  const name = String(email || "").split("@")[0].toLowerCase();
+  return [
+    ["至少 8 個字元", pw.length >= 8],
+    ["包含英文字母", /[A-Za-z]/.test(pw)],
+    ["包含數字", /\d/.test(pw)],
+    ["不含 Email 帳號名稱", !(name.length >= 3 && pw.toLowerCase().includes(name))],
+    ["不是常見密碼", !COMMON_PW.includes(pw.toLowerCase())]
+  ];
+}
+const pwOK = (pw, email) => pwChecks(pw, email).every(([, ok]) => ok);
+function renderPwMeter(pw, email, barId, rulesId) {
+  const checks = pwChecks(pw, email);
+  let score = checks.filter(([, ok]) => ok).length;
+  if (pw.length >= 12) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const pctW = pw ? Math.min(100, Math.round((score / 7) * 100)) : 0;
+  const bar = $(barId);
+  bar.style.width = pctW + "%";
+  bar.className = !pw ? "" : !pwOK(pw, email) ? "weak" : score >= 7 ? "strong" : "ok";
+  $(rulesId).innerHTML = checks.map(([t, ok]) => `<li class="${ok ? "ok" : ""}">${ok ? "✓" : "・"} ${t}</li>`).join("") +
+    `<li class="hint">建議 12 字元以上，或加入符號會更安全</li>`;
+}
+// 顯示／隱藏密碼
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-eye]");
+  if (!b) return;
+  const i = $(b.dataset.eye);
+  const show = i.type === "password";
+  i.type = show ? "text" : "password";
+  b.textContent = show ? "隱藏" : "顯示";
+  b.setAttribute("aria-label", show ? "隱藏密碼" : "顯示密碼");
+});
+
 /* ---------- 登入 / 註冊 ---------- */
 let authMode = "login";
 function setAuthMode(m) {
@@ -159,9 +206,15 @@ function setAuthMode(m) {
   $("auth-pass2").required = reg;
   $("auth-pass").autocomplete = reg ? "new-password" : "current-password";
   $("auth-toggle").textContent = reg ? "已有帳號？回到登入" : "受邀新用戶？註冊帳號";
+  $("pw-meter").hidden = !reg;
+  $("auth-pass").minLength = reg ? 8 : 6;
+  if (reg) renderPwMeter($("auth-pass").value, $("auth-email").value, "pw-bar", "pw-rules");
   $("auth-err").textContent = "";
 }
 $("auth-toggle").onclick = () => setAuthMode(authMode === "login" ? "register" : "login");
+const updAuthMeter = () => { if (authMode === "register") renderPwMeter($("auth-pass").value, $("auth-email").value, "pw-bar", "pw-rules"); };
+$("auth-pass").oninput = updAuthMeter;
+$("auth-email").oninput = updAuthMeter;
 
 $("form-auth").onsubmit = async (e) => {
   e.preventDefault();
@@ -171,6 +224,7 @@ $("form-auth").onsubmit = async (e) => {
   $("auth-submit").disabled = true;
   try {
     if (authMode === "register") {
+      if (!pwOK(pw, email)) throw { message: "密碼不符合規定，請看密碼欄下方的條件" };
       if (pw !== $("auth-pass2").value) throw { message: "兩次輸入的密碼不一致" };
       S.registering = true;
       const cred = await createUserWithEmailAndPassword(auth, email, pw);
@@ -190,6 +244,11 @@ $("form-auth").onsubmit = async (e) => {
     $("auth-err").textContent = errMsg(err);
   } finally {
     $("auth-submit").disabled = false;
+    // 不讓密碼留在畫面上
+    $("auth-pass").value = ""; $("auth-pass2").value = "";
+    $("auth-pass").type = "password"; $("auth-pass2").type = "password";
+    document.querySelectorAll("#form-auth [data-eye]").forEach((b) => { b.textContent = "顯示"; });
+    updAuthMeter();
   }
 };
 
@@ -216,6 +275,41 @@ $("verify-resend").onclick = async () => {
   catch (e) { toast(errMsg(e)); }
 };
 $("verify-logout").onclick = () => signOut(auth);
+
+/* ---------- 帳號設定：變更密碼 ---------- */
+function resetPwForm() {
+  ["pw-old", "pw-new", "pw-new2"].forEach((id) => { $(id).value = ""; $(id).type = "password"; });
+  document.querySelectorAll("#form-pw [data-eye]").forEach((b) => { b.textContent = "顯示"; });
+  $("pw-err").textContent = "";
+  renderPwMeter("", S.user?.email, "pw-new-bar", "pw-new-rules");
+}
+$("btn-account").onclick = () => {
+  if (!S.user) return;
+  $("acc-email").textContent = S.user.email;
+  resetPwForm();
+  $("dlg-account").showModal();
+};
+$("acc-close").onclick = () => { resetPwForm(); $("dlg-account").close(); };
+$("pw-new").oninput = () => renderPwMeter($("pw-new").value, S.user?.email, "pw-new-bar", "pw-new-rules");
+$("form-pw").onsubmit = async (e) => {
+  e.preventDefault();
+  const oldPw = $("pw-old").value, pw = $("pw-new").value;
+  $("pw-err").textContent = "";
+  if (!pwOK(pw, S.user.email)) { $("pw-err").textContent = "新密碼不符合規定，請看上方條件"; return; }
+  if (pw !== $("pw-new2").value) { $("pw-err").textContent = "兩次輸入的新密碼不一致"; return; }
+  if (pw === oldPw) { $("pw-err").textContent = "新密碼不能和目前密碼相同"; return; }
+  $("pw-save").disabled = true;
+  try {
+    // 先用目前密碼重新驗證，避免別人拿到已登入的裝置就能改密碼
+    await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(S.user.email, oldPw));
+    await updatePassword(auth.currentUser, pw);
+    resetPwForm();
+    $("dlg-account").close();
+    toast("密碼已更新，下次登入請用新密碼", 4000);
+  } catch (err) {
+    $("pw-err").textContent = ["auth/invalid-credential", "auth/wrong-password"].includes(err?.code) ? "目前密碼不正確" : errMsg(err);
+  } finally { $("pw-save").disabled = false; }
+};
 $("btn-logout").onclick = async () => {
   stopTimer(); S.quiz = null;
   try { localStorage.removeItem(BANK_KEY); } catch {}

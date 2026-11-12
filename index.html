@@ -229,9 +229,10 @@
     <div class="card">
       <h2>題庫（共 <span id="adm-count">0</span> 題）</h2>
       <h3>匯入題目</h3>
-      <p class="muted small">選擇 .json 題庫檔，或直接貼上內容。id 相同的題目會被覆蓋（可用來更新題目）。</p>
-      <input type="file" id="imp-file" accept=".json,application/json">
+      <p class="muted small">選擇 .json 題庫檔（可一次選多個），或直接貼上內容。id 相同的題目會被覆蓋（可用來更新題目）。</p>
+      <input type="file" id="imp-file" accept=".json,application/json" multiple>
       <textarea id="imp-text" rows="5" placeholder='[{"id":"SB-V2-C45-001","category":"otology", ...}]'></textarea>
+      <label class="small"><input type="checkbox" id="imp-replace"> 取代整個題庫：匯入後刪除目前題庫中「不在這次檔案裡」的題目（會先自動備份，可還原）</label>
       <div class="row">
         <button class="primary" id="imp-go">匯入</button>
         <button id="adm-export">匯出全部題目</button>

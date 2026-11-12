@@ -37,8 +37,12 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 const CHANGELOG = [
+  { v: "1.4.0", date: "2026-11-12", notes: [
+    "管理者：匯入時可一次選多個題庫檔",
+    "管理者：新增「取代整個題庫」選項，匯入後自動刪除不在檔案裡的舊題（會先備份，可還原）"
+  ]},
   { v: "1.3.0", date: "2026-11-11", notes: [
     "參考資料新增「📄 開啟本章 PDF」：直接在 Google Drive 找到這題出處的那一章（需有該資料夾的檢視權限）",
     "參考資料可顯示「📍 本題依據」：頁碼、段落標題或 KEY POINTS 第幾點；管理者可在題目編輯器填寫"
@@ -1024,14 +1028,31 @@ function validateQ(q) {
 }
 const impMsg = (m) => ($("imp-msg").textContent = m);
 
+// 選擇的檔案內容（可多個）；大檔不放進文字框，避免手機卡住
+let impFiles = null;
 $("imp-file").onchange = async (e) => {
-  const f = e.target.files[0];
-  if (f) $("imp-text").value = await f.text();
+  const files = [...e.target.files];
+  impFiles = null;
+  if (!files.length) return;
+  try {
+    impFiles = [];
+    for (const f of files) {
+      let d = JSON.parse(await f.text());
+      if (!Array.isArray(d)) d = d?.questions;
+      if (!Array.isArray(d)) throw new Error(`${f.name} 找不到題目陣列`);
+      impFiles.push(...d);
+    }
+    $("imp-text").value = "";
+    impMsg(`已讀取 ${files.length} 個檔案，共 ${impFiles.length} 題。按「匯入」開始。`);
+  } catch (err) { impFiles = null; impMsg("檔案讀取失敗：" + err.message); }
 };
+$("imp-text").oninput = () => { if ($("imp-text").value.trim()) { impFiles = null; $("imp-file").value = ""; } };
 $("imp-go").onclick = async () => {
-  let data;
-  try { data = JSON.parse($("imp-text").value); } catch (e) { impMsg("JSON 格式錯誤：" + e.message); return; }
-  if (!Array.isArray(data)) data = data?.questions;
+  let data = impFiles;
+  if (!data) {
+    try { data = JSON.parse($("imp-text").value); } catch (e) { impMsg("JSON 格式錯誤：" + e.message); return; }
+    if (!Array.isArray(data)) data = data?.questions;
+  }
   if (!Array.isArray(data) || !data.length) { impMsg("找不到題目陣列"); return; }
   const qs = data.map(normQ), errs = [], seen = new Set();
   qs.forEach((q, i) => {
@@ -1043,24 +1064,34 @@ $("imp-go").onclick = async () => {
   if (errs.length) { impMsg(errs.slice(0, 30).join("\n") + (errs.length > 30 ? `\n…共 ${errs.length} 個錯誤` : "")); return; }
   const existing = new Set(S.bank.map((q) => q.id));
   const dup = qs.filter((q) => existing.has(q.id)).length;
-  if (!confirm(`將匯入 ${qs.length} 題（其中 ${dup} 題 id 已存在，會被更新）。繼續？`)) return;
+  const replace = $("imp-replace").checked;
+  const removeIds = replace ? S.bank.map((q) => q.id).filter((id) => !seen.has(id)) : [];
+  const ask = `將匯入 ${qs.length} 題（其中 ${dup} 題 id 已存在，會被更新）。` +
+    (replace ? `\n取代模式：會刪除目前題庫中不在檔案裡的 ${removeIds.length} 題${removeIds.length ? `（例如 ${removeIds.slice(0, 3).join("、")}${removeIds.length > 3 ? "…" : ""}）` : ""}。` : "") +
+    `\n匯入前會自動備份。繼續？`;
+  if (!confirm(ask)) return;
   try {
     $("imp-go").disabled = true;
     impMsg("備份目前題庫中…");
-    await createSnapshot(`匯入前自動備份（匯入 ${qs.length} 題：新增 ${qs.length - dup}、更新 ${dup}）`);
+    await createSnapshot(`匯入前自動備份（匯入 ${qs.length} 題：新增 ${qs.length - dup}、更新 ${dup}${replace ? `、刪除 ${removeIds.length}` : ""}）`);
     for (let i = 0; i < qs.length; i += 400) {
       const b = writeBatch(db);
       qs.slice(i, i + 400).forEach((q) => b.set(doc(db, "questions", q.id), q));
       await b.commit();
       impMsg(`匯入中… ${Math.min(i + 400, qs.length)} / ${qs.length}`);
     }
-    const map = new Map(S.bank.map((q) => [q.id, q]));
+    for (let i = 0; i < removeIds.length; i += 400) {
+      const b = writeBatch(db);
+      removeIds.slice(i, i + 400).forEach((id) => b.delete(doc(db, "questions", id)));
+      await b.commit();
+    }
+    const map = replace ? new Map() : new Map(S.bank.map((q) => [q.id, q]));
     qs.forEach((q) => map.set(q.id, q));
     S.bank = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
     await bumpVersion();
-    impMsg(`完成：新增 ${qs.length - dup} 題、更新 ${dup} 題。匯入前的題庫已備份，可在「題庫版本紀錄」還原。`);
+    impMsg(`完成：新增 ${qs.length - dup} 題、更新 ${dup} 題${replace ? `、刪除 ${removeIds.length} 題` : ""}，目前共 ${S.bank.length} 題。匯入前的題庫已備份，可在「題庫版本紀錄」還原。`);
     renderSnapshots();
-    $("imp-text").value = ""; $("imp-file").value = "";
+    $("imp-text").value = ""; $("imp-file").value = ""; impFiles = null; $("imp-replace").checked = false;
     $("adm-count").textContent = S.bank.length;
     renderQList();
   } catch (e) { impMsg("匯入失敗：" + errMsg(e)); }

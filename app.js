@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.10.0";
 const CHANGELOG = [
+  { v: "1.10.0", date: "2026-11-13", notes: [
+    "管理者：新增「版本更新通知」，一鍵用郵件 App 把更新內容寄給所有會員（只寫一般使用者看得到的更新，管理者相關的不寫）"
+  ]},
   { v: "1.9.0", date: "2026-11-13", notes: [
     "新增「依章節練習」：依 Scott-Brown 冊別與章節勾選，讀到哪練到哪；可用「從…到…」一次選一段",
     "每章顯示已做題數與答對率，整章做完會打勾",
@@ -1260,8 +1263,72 @@ function finishQuiz() {
 function renderAdmin() {
   $("adm-count").textContent = S.bank.length;
   if (!$("adm-cat").options.length) $("adm-cat").innerHTML = catOptionsHTML(true);
-  renderInvites(); renderUserStats(); renderQList(); renderSnapshots(); show("admin");
+  renderInvites(); renderNotify(); renderUserStats(); renderQList(); renderSnapshots(); show("admin");
 }
+
+/* ---------- 管理：版本更新通知信 ---------- */
+// 以「管理者：」或「管理員：」開頭的更新只給管理者看，不寫進會員通知信
+const isAdminNote = (n) => /^管理(者|員)\s*[：:]/.test(n);
+let notifyState = { last: null, emails: [] };
+const userNotes = (c) => ({ ...c, notes: c.notes.filter((n) => !isAdminNote(n)) });
+// 從選定的版本（含）到最新版，只留會員看得到的更新
+function pendingReleases() {
+  const from = $("nt-from").value;
+  return CHANGELOG.filter((c) => from && verNum(c.v) >= verNum(from)).map(userNotes).filter((c) => c.notes.length);
+}
+function notifyMail() {
+  const rel = pendingReleases();
+  const url = location.origin + location.pathname;
+  const subject = `ENT 專科練習網站更新（v${rel[0]?.v || APP_VERSION}）`;
+  const body = ["各位好，", "", "ENT 專科練習網站有新功能：", "",
+    ...rel.flatMap((c) => [`【v${c.v}・${c.date}】`, ...c.notes.map((n) => `・${n}`), ""]),
+    "如果打開網站還是舊版，請按網頁最下方的「重新整理」。", "", `網站：${url}`, "", "祝 考試順利"].join("\n");
+  return { subject, body, rel };
+}
+async function renderNotify() {
+  try {
+    const [m, inv] = await Promise.all([getDoc(doc(db, "meta", "notify")), getDocs(collection(db, "allowlist"))]);
+    notifyState.last = m.exists() ? m.data().v : null;
+    notifyState.emails = inv.docs.map((d) => d.id);
+  } catch (e) { $("nt-status").textContent = "讀取失敗：" + errMsg(e); return; }
+  // 預設從「上次通知之後」第一個有會員更新的版本開始；從沒通知過就只寄最近一個版本
+  const withNotes = CHANGELOG.map(userNotes).filter((c) => c.notes.length);
+  const newer = withNotes.filter((c) => notifyState.last && verNum(c.v) > verNum(notifyState.last));
+  const def = notifyState.last ? newer[newer.length - 1]?.v : withNotes[0]?.v;
+  $("nt-from").innerHTML = withNotes.map((c) => `<option value="${c.v}">v${c.v}（${c.date}）</option>`).join("");
+  $("nt-from").value = def || withNotes[0]?.v || "";
+  if (notifyState.last && !newer.length) $("nt-from").value = "";
+  updateNotifyPreview();
+}
+function updateNotifyPreview() {
+  const { rel, body } = notifyMail();
+  $("nt-status").textContent = (notifyState.last ? `上次通知到 v${notifyState.last}。` : "還沒發過更新通知。") +
+    (rel.length ? `這封信包含 ${rel.length} 個版本的更新，會寄給 ${notifyState.emails.length} 位會員。` : "目前沒有需要通知會員的更新（管理者相關的更新不會寄出）。");
+  $("nt-preview").textContent = rel.length ? body : "";
+  ["nt-mail", "nt-copy-to", "nt-copy-body", "nt-done"].forEach((id) => ($(id).disabled = !rel.length));
+}
+$("nt-from").onchange = updateNotifyPreview;
+$("nt-mail").onclick = () => {
+  const { subject, body } = notifyMail();
+  const href = `mailto:${encodeURIComponent(S.user.email)}?bcc=${notifyState.emails.map(encodeURIComponent).join(",")}` +
+    `&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if (href.length > 8000) toast("內容或收件人太多，郵件 App 可能裝不下；也可以用「複製收件人」和「複製信件內容」", 6000);
+  location.href = href;
+};
+async function copyText(text, ok) {
+  try { await navigator.clipboard.writeText(text); toast(ok); }
+  catch { prompt("請手動複製：", text); }
+}
+$("nt-copy-to").onclick = () => copyText(notifyState.emails.join(", "), `已複製 ${notifyState.emails.length} 個 Email，貼到密件副本（BCC）`);
+$("nt-copy-body").onclick = () => { const { subject, body } = notifyMail(); copyText(`${subject}\n\n${body}`, "已複製主旨與內容"); };
+$("nt-done").onclick = async () => {
+  const v = APP_VERSION;
+  if (!confirm(`確定已寄出？之後只會通知 v${v} 以後的更新。`)) return;
+  try {
+    await setDoc(doc(db, "meta", "notify"), { v, at: serverTimestamp(), by: S.user.email });
+    toast("已標記為已通知"); renderNotify();
+  } catch (e) { toast("儲存失敗：" + errMsg(e)); }
+};
 
 /* ---------- 管理：使用者作答情形 ---------- */
 let usersCache = [];

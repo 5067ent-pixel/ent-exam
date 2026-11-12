@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.9.0">
+<link rel="stylesheet" href="style.css?v=1.10.0">
 </head>
 <body>
 <header class="topbar">
@@ -298,6 +298,22 @@
 
   <!-- 管理 -->
   <section id="view-admin" class="view" hidden>
+    <div class="card" id="notify-card">
+      <h2>版本更新通知</h2>
+      <label class="inline small">通知內容從<select id="nt-from"></select>到最新版</label>
+      <p class="muted small" id="nt-status"></p>
+      <div id="nt-preview" class="nt-preview"></div>
+      <div class="row">
+        <button class="primary" id="nt-mail">用郵件 App 寄給所有會員</button>
+        <button id="nt-copy-to">複製收件人</button>
+        <button id="nt-copy-body">複製信件內容</button>
+      </div>
+      <div class="row">
+        <button class="link" id="nt-done">寄出了，標記為已通知</button>
+      </div>
+      <p class="muted small">收件人放在密件副本（BCC），會員彼此看不到對方的 Email。標註「管理者：」的更新不會寫進信裡。</p>
+    </div>
+
     <div class="card">
       <h2>邀請使用者</h2>
       <label>Email（可一次貼多個，用換行或逗號分隔）
@@ -448,6 +464,6 @@
   </form>
 </dialog>
 
-<script type="module" src="app.js?v=1.9.0"></script>
+<script type="module" src="app.js?v=1.10.0"></script>
 </body>
 </html>

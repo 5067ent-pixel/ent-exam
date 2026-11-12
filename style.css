@@ -317,3 +317,7 @@ details.rq { border: none; background: #fff; box-shadow: 0 1px 2px rgba(16,40,50
 .ch-bar { align-items: center; }
 .ch-bar .ch-sum { flex: 1; font-size: .88rem; }
 .ch-bar #ch-start { flex: 0 0 auto; min-width: 120px; }
+
+/* 版本更新通知 */
+.nt-preview { white-space: pre-wrap; font-size: .85rem; background: var(--bg); border-radius: 12px; padding: 12px 14px; max-height: 260px; overflow: auto; }
+.nt-preview:empty { display: none; }

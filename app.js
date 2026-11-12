@@ -22,6 +22,20 @@ const CATS = {
   audiology: "臨床聽力及言語學",
   special: "我國特殊耳鼻喉疾病"
 };
+// 各科顏色（點、標籤、文字）
+const CAT_COLOR = {
+  otology: ["#2563EB", "#E3ECFD", "#1E40AF"],
+  rhinology: ["#059669", "#DDF3EA", "#065F46"],
+  laryngology: ["#D97706", "#FDF0DC", "#92400E"],
+  headneck: ["#7C3AED", "#EFE7FD", "#5B21B6"],
+  facialplastic: ["#DB2777", "#FCE4EF", "#9D174D"],
+  pediatric: ["#0891B2", "#DDF2F7", "#155E75"],
+  sleep: ["#4F46E5", "#E6E6FC", "#3730A3"],
+  audiology: ["#65A30D", "#EAF5DA", "#3F6212"],
+  special: ["#DC2626", "#FCE5E5", "#991B1B"]
+};
+const catColor = (k) => CAT_COLOR[k] || ["#5B6B73", "#EEF2F4", "#3E4F57"];
+const catTagStyle = (k) => `background:${catColor(k)[1]};color:${catColor(k)[2]}`;
 const LETTERS = "ABCDEF";
 const BANK_KEY = "ent-bank-v1";
 const PREF_KEY = "ent-prefs-v1";
@@ -37,8 +51,16 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 const CHANGELOG = [
+  { v: "1.6.0", date: "2026-11-12", notes: [
+    "全新介面：Noto Sans TC 字體、圓角卡片、深藍綠主色",
+    "首頁主卡：完成進度環、答對率、待複習錯題、連續練習天數，一鍵「繼續練習」（優先出沒做過的題）",
+    "首頁快捷鍵：錯題本、星號題目、模擬考",
+    "各科答對率改為彩色橫條（低於 60% 標橘色），並提示弱科、一鍵練弱科",
+    "九個科目各有專屬顏色",
+    "作答畫面：頂部進度條與答對／答錯計數、大圓角選項、底部固定按鈕；送出後標出「你的答案」與「正解」"
+  ]},
   { v: "1.5.0", date: "2026-11-12", notes: [
     "管理者：新增「使用者作答情形」，可看每位使用者的作答題數、答對率、錯題數、最近作答時間",
     "管理者：點開使用者可看各科答對率、最近 10 次練習／模擬考成績與錯題清單",
@@ -365,7 +387,9 @@ function explBlock(q) {
 }
 function feedbackHTML(q, sel) {
   const ok = sel === q.answer;
-  return `<div class="verdict ${ok ? "ok" : "bad"}">${ok ? "答對了" : `答錯了，正解是 ${LETTERS[q.answer]}`}</div>` +
+  const icon = ok ? `<path d="M5 12.5l4.5 4.5L19 7.5"></path>` : `<path d="M6 6l12 12M18 6L6 18"></path>`;
+  return `<div class="verdict ${ok ? "ok" : "bad"}"><span class="v-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg></span>
+    <span><b>${ok ? "答對了" : sel == null ? `沒有作答，正解是 ${LETTERS[q.answer]}` : `答錯了，正解是 ${LETTERS[q.answer]}`}</b>${ok ? "" : `<small>已加入錯題本，之後答對會自動移出</small>`}</span></div>` +
     explBlock(q) +
     (q.reviewed ? "" : `<div class="src">⚠ 本題尚未經審題，如有疑問請回報管理員</div>`);
 }
@@ -479,7 +503,7 @@ function starredList(sel) {
 function renderStarTotal() {
   const n = S.bank.filter((q) => isStar(q.id)).length;
   const g = Object.keys(S.groups).length;
-  $("star-total").textContent = n ? `（共 ${n} 題${g ? `，${g} 個群組` : ""}）` : "（目前沒有星號題目）";
+  $("star-total").textContent = n ? `${n} 題${g ? `・${g} 群組` : ""}` : "還沒有收藏";
 }
 function renderStarred() {
   if (svSel !== "all" && svSel !== "none" && !S.groups[svSel]) svSel = "all";
@@ -576,17 +600,40 @@ function renderHome() {
     if (p) { c.ans++; ans++; if (p.last) { c.cor++; cor++; } }
     if (isWrong(p)) { c.wrong++; wrong++; }
   }
-  $("stats-summary").innerHTML = [
-    ["題庫總數", S.bank.length], ["已做過", ans], ["最近一次答對率", pct(cor, ans)], ["待複習錯題", wrong]
-  ].map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
-  $("stats-table").innerHTML =
-    `<tr><th>範圍</th><th class="num">題數</th><th class="num">已做</th><th class="num">答對率</th><th></th></tr>` +
-    Object.entries(per).map(([k, c]) =>
-      `<tr><td>${esc(CATS[k] || k)}</td><td class="num">${c.total}</td><td class="num">${c.ans}</td><td class="num">${pct(c.cor, c.ans)}</td>
-       <td class="num">${c.total ? `<button class="link" data-only-cat="${k}">練這科</button>` : ""}</td></tr>`
-    ).join("");
+  // 主卡：進度環、問候、統計
+  const total = S.bank.length, ratio = total ? ans / total : 0;
+  const C = 2 * Math.PI * 44, dash = Math.round(C * ratio);
+  $("hero-ring").innerHTML = `<svg width="104" height="104" viewBox="0 0 104 104" role="img" aria-label="已完成 ${Math.round(ratio * 100)}%">
+    <circle cx="52" cy="52" r="44" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="10"></circle>
+    <circle cx="52" cy="52" r="44" fill="none" stroke="#FFB867" stroke-width="10" stroke-linecap="round" stroke-dasharray="${dash} ${Math.round(C)}" transform="rotate(-90 52 52)"></circle>
+    <text x="52" y="52" text-anchor="middle" fill="#fff" font-size="24" font-weight="900">${Math.round(ratio * 100)}%</text>
+    <text x="52" y="71" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="11">已完成</text></svg>`;
+  const hr = new Date().getHours();
+  $("hero-hi").textContent = `${hr < 11 ? "早安" : hr < 18 ? "午安" : "晚安"}，今天也來練幾題`;
+  $("hero-count").innerHTML = `${ans.toLocaleString()}<small> / ${total.toLocaleString()} 題</small>`;
+  $("hero-sub").textContent = ans ? `還有 ${(total - ans).toLocaleString()} 題沒做過` : "從第一題開始吧";
+  const streak = calcStreak();
+  $("hero-stats").innerHTML = [[pct(cor, ans), "答對率"], [wrong, "待複習錯題"], [`${streak} 天`, "連續練習"]]
+    .map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join("");
 
-  $("wrong-total").textContent = wrong ? `（共 ${wrong} 題）` : "（目前沒有錯題）";
+  // 各科答對率橫條
+  const rows = Object.entries(per).filter(([, c]) => c.total);
+  $("cat-bars").innerHTML = rows.map(([k, c]) => {
+    const r = c.ans ? c.cor / c.ans : null;
+    const cls = r == null ? "" : r >= 0.8 ? "good" : r >= 0.6 ? "mid" : "low";
+    return `<button class="bar-row" data-only-cat="${k}" aria-label="只練${esc(CATS[k] || k)}">
+      <span class="bar-name"><i style="background:${catColor(k)[0]}"></i>${esc(CATS[k] || k)}</span>
+      <span class="bar"><span class="${cls}" style="width:${r == null ? 0 : Math.round(r * 100)}%"></span></span>
+      <span class="bar-pct ${cls}">${r == null ? "—" : Math.round(r * 100) + "%"}</span>
+      <span class="bar-meta">${c.ans}/${c.total}</span></button>`;
+  }).join("");
+  const weak = rows.filter(([, c]) => c.ans >= 5 && c.cor / c.ans < 0.6).sort((a, b) => a[1].cor / a[1].ans - b[1].cor / b[1].ans).slice(0, 2);
+  $("weak-hint").innerHTML = weak.length ? `<div class="weak">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+    <span>弱科：${weak.map(([k]) => esc(CATS[k] || k)).join("、")}</span>
+    <button class="link" id="weak-go" data-cats="${weak.map(([k]) => k).join(",")}">練弱科</button></div>` : "";
+
+  $("wrong-total").textContent = wrong ? `${wrong} 題` : "目前沒有錯題";
   renderStarTotal();
 
   // 範圍選擇（保留原本勾選）
@@ -594,7 +641,7 @@ function renderHome() {
   const prev = new Set([...box.querySelectorAll("input:checked")].map((i) => i.value));
   const first = !box.children.length;
   box.innerHTML = Object.entries(CATS).map(([k, v]) =>
-    `<label><input type="checkbox" value="${k}" ${first || prev.has(k) ? "checked" : ""}> ${v} <span class="muted">${per[k].total}</span>${per[k].wrong ? ` <span class="wrong-n">錯${per[k].wrong}</span>` : ""}</label>`
+    `<label><input type="checkbox" value="${k}" ${first || prev.has(k) ? "checked" : ""}><i class="dot" style="background:${catColor(k)[0]}"></i>${v} <span class="muted">${per[k].total}</span>${per[k].wrong ? ` <span class="wrong-n">錯${per[k].wrong}</span>` : ""}</label>`
   ).join("");
   renderSetupGroups();
   syncPrefUI();
@@ -627,13 +674,40 @@ function startWrongReview(cat) {
   startQuiz(qs, "practice", "review");
 }
 $("wrong-book-open").onclick = () => go("wrong");
-$("stats-table").onclick = (e) => {
-  const b = e.target.closest("[data-only-cat]");
-  if (!b) return;
-  document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = i.value === b.dataset.onlyCat));
+function selectCats(cats, msg) {
+  document.querySelectorAll("#cat-boxes input").forEach((i) => (i.checked = cats.includes(i.value)));
   updatePoolInfo();
   $("form-setup").scrollIntoView({ behavior: "smooth", block: "start" });
-  toast(`已只選「${CATS[b.dataset.onlyCat]}」，設定好題數後按開始`);
+  if (msg) toast(msg);
+}
+$("cat-bars").onclick = (e) => {
+  const b = e.target.closest("[data-only-cat]");
+  if (b) selectCats([b.dataset.onlyCat], `已只選「${CATS[b.dataset.onlyCat]}」，設定好題數後按開始`);
+};
+$("weak-hint").onclick = (e) => {
+  const b = e.target.closest("#weak-go");
+  if (b) selectCats(b.dataset.cats.split(","), "已選好弱科，設定好題數後按開始");
+};
+// 連續練習天數：以每題作答時間計，今天或昨天有練就算連續
+function calcStreak() {
+  const days = new Set(Object.values(S.progress).map((p) => p.t && new Date(p.t).toDateString()).filter(Boolean));
+  const d = new Date();
+  if (!days.has(d.toDateString())) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (days.has(d.toDateString())) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+// 主卡「繼續練習」：全部科目，優先出沒做過的題目
+$("hero-go").onclick = () => {
+  const fresh = S.bank.filter((q) => !S.progress[q.id]);
+  const pool = fresh.length ? fresh : S.bank;
+  if (!pool.length) { toast("題庫還是空的"); return; }
+  startQuiz(shuffle(pool.slice()).slice(0, 20), "practice");
+};
+$("tile-exam").onclick = () => {
+  document.querySelector("input[name=mode][value=exam]").checked = true;
+  $("form-setup").scrollIntoView({ behavior: "smooth", block: "start" });
+  toast("已切到模擬考，選好科目與題數後按開始");
 };
 
 /* ---------- 錯題本 ---------- */
@@ -733,14 +807,23 @@ function renderQ() {
   const last = Q.i === Q.qs.length - 1;
   const label = { review: "錯題複習　", starred: "★ 星號題目　" }[Q.kind] || "";
   $("quiz-pos").textContent = `${label}第 ${Q.i + 1} / ${Q.qs.length} 題`;
+  $("quiz-pos-big").textContent = `${label}第 ${Q.i + 1} / ${Q.qs.length} 題`;
+  const done = Q.mode === "practice" ? Q.revealed.filter(Boolean).length : Q.answers.filter((a) => a != null).length;
+  $("quiz-bar").style.width = Math.round((done / Q.qs.length) * 100) + "%";
+  if (Q.mode === "practice") {
+    const okN = Q.qs.filter((x, i) => Q.revealed[i] && Q.answers[i] === x.answer).length;
+    $("quiz-score").textContent = `答對 ${okN}・答錯 ${done - okN}`;
+  } else $("quiz-score").textContent = `已作答 ${done}`;
   $("quiz-cat").textContent = CATS[q.category] || q.category;
+  $("quiz-cat").style.cssText = catTagStyle(q.category);
   renderQuizStar();
   $("quiz-stem").innerHTML = fmt(q.stem);
   $("quiz-options").innerHTML = q.options.map((o, k) => {
     let cls = "opt";
     if (sel === k) cls += " selected";
     if (rev) { if (k === q.answer) cls += " correct"; else if (k === sel) cls += " wrong"; }
-    return `<button class="${cls}" data-k="${k}" ${rev ? "disabled" : ""}><b>${LETTERS[k]}.</b><span>${fmt(o)}</span></button>`;
+    const tag = rev ? (k === q.answer ? `<em>正解</em>` : k === sel ? `<em>你的答案</em>` : "") : "";
+    return `<button class="${cls}" data-k="${k}" ${rev ? "disabled" : ""}><b>${LETTERS[k]}</b><span>${fmt(o)}</span>${tag}</button>`;
   }).join("");
   const fb = $("quiz-feedback");
   fb.hidden = !rev;
@@ -794,6 +877,7 @@ $("quiz-finish").onclick = () => {
   if (un && !confirm(`還有 ${un} 題沒作答，確定交卷？`)) return;
   finishQuiz();
 };
+$("quiz-x").onclick = () => $("quiz-quit").click();
 $("quiz-quit").onclick = () => {
   const Q = S.quiz;
   if (Q.mode === "practice") {

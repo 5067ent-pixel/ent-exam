@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ENT 專科考試練習</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -56,18 +58,44 @@
 
   <!-- 首頁 -->
   <section id="view-home" class="view" hidden>
+    <section class="hero">
+      <div class="hero-top">
+        <div id="hero-ring" class="hero-ring"></div>
+        <div class="hero-text">
+          <span class="hero-hi" id="hero-hi"></span>
+          <span class="hero-big" id="hero-count"></span>
+          <span class="hero-sub" id="hero-sub"></span>
+        </div>
+      </div>
+      <div class="hero-stats" id="hero-stats"></div>
+      <button class="hero-go" id="hero-go">繼續練習 20 題
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+      </button>
+    </section>
+
+    <section class="tiles">
+      <button class="tile" id="wrong-book-open">
+        <span class="tile-ic ic-wrong"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg></span>
+        <b>錯題本</b><span class="tile-sub" id="wrong-total"></span>
+      </button>
+      <button class="tile" data-go="starred">
+        <span class="tile-ic ic-star"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"></path></svg></span>
+        <b>星號題目</b><span class="tile-sub" id="star-total"></span>
+      </button>
+      <button class="tile" id="tile-exam">
+        <span class="tile-ic ic-exam"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2M9 2h6"></path></svg></span>
+        <b>模擬考</b><span class="tile-sub">限時作答</span>
+      </button>
+    </section>
+
     <div class="card">
-      <h2>我的進度</h2>
-      <div id="stats-summary" class="stats"></div>
-      <details>
-        <summary>各範圍答對率</summary>
-        <table id="stats-table" class="tbl"></table>
-      </details>
+      <div class="card-head"><h2>各科答對率</h2><span class="muted small">點一科只練這科</span></div>
+      <div id="cat-bars" class="bars"></div>
+      <div id="weak-hint"></div>
     </div>
 
-
     <div class="card">
-      <h2>開始做題</h2>
+      <h2>自訂練習</h2>
       <form id="form-setup">
         <fieldset>
           <legend><b>① 這次要複習哪些科目？</b> <span class="muted small">（可複選，紅字為該科錯題數）</span></legend>
@@ -103,18 +131,6 @@
         <p class="muted small" id="pool-info"></p>
         <button class="primary wide" type="submit">開始</button>
       </form>
-    </div>
-
-    <div class="card">
-      <h2>★ 星號題目 <span class="muted small" id="star-total"></span></h2>
-      <p class="muted small">做題時按 ☆ 收藏題目，並可放進自己建立的群組（例如「NPC 必考」「待問主治」）。</p>
-      <button data-go="starred">打開星號題目</button>
-    </div>
-
-    <div class="card">
-      <h2>錯題本 <span class="muted small" id="wrong-total"></span></h2>
-      <p class="muted small">瀏覽所有答錯的題目與詳解，可依科目篩選，也可以把已經會的題目移出。</p>
-      <button id="wrong-book-open">打開錯題本</button>
     </div>
 
     <div class="card">
@@ -168,8 +184,15 @@
 
   <!-- 作答 -->
   <section id="view-quiz" class="view" hidden>
+    <div class="quiz-top">
+      <button class="icon-btn" id="quiz-x" aria-label="結束作答"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      <div class="quiz-progress">
+        <div class="row between small"><b id="quiz-pos-big"></b><span class="muted" id="quiz-score"></span></div>
+        <div class="pbar"><div id="quiz-bar"></div></div>
+      </div>
+    </div>
     <div class="quiz-head">
-      <span id="quiz-pos"></span>
+      <span id="quiz-pos" hidden></span>
       <span id="quiz-cat" class="tag"></span>
       <span id="quiz-star"></span>
       <label class="toggle small" id="quiz-expl-wrap"><input type="checkbox" class="pref-expl"> 詳解</label>
@@ -180,10 +203,10 @@
       <div id="quiz-options" class="options"></div>
       <div id="quiz-feedback" class="feedback" hidden></div>
     </div>
-    <div class="row between">
+    <div class="actionbar">
       <button id="quiz-prev">上一題</button>
       <button id="quiz-submit" class="primary">送出答案</button>
-      <button id="quiz-next">下一題</button>
+      <button id="quiz-next" class="primary">下一題</button>
     </div>
     <div id="quiz-grid" class="qgrid" hidden></div>
     <div class="row between">

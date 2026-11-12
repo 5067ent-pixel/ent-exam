@@ -52,8 +52,12 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 const CHANGELOG = [
+  { v: "1.8.2", date: "2026-11-12", notes: [
+    "頁尾新增「重新整理」按鈕：手機或加到主畫面時沒有重新整理鍵，也能一鍵載入最新版",
+    "「立即更新」改為強制略過快取重新載入"
+  ]},
   { v: "1.8.1", date: "2026-11-12", notes: [
     "移除「開啟本章 PDF」連結",
     "「📍 本題依據」改為：書上頁碼（PDF 頁數）、小標，比對明確時再標出小標下第幾段；跨頁的小標會顯示頁數範圍"
@@ -441,7 +445,15 @@ async function checkUpdate() {
     if (v && verNum(v) > verNum(APP_VERSION)) $("update-bar").hidden = false;
   } catch {}
 }
-$("update-go").onclick = () => location.reload();
+// 強制重新載入：網址加上時間參數，讓瀏覽器重新抓 index.html（手機或加到主畫面時沒有重新整理鍵也能用）
+function hardReload() {
+  if (S.quiz && !S.quiz.done && !confirm("重新整理會放棄這次作答，確定嗎？")) return;
+  location.replace(location.pathname + "?r=" + Date.now());
+}
+$("update-go").onclick = hardReload;
+$("btn-refresh").onclick = hardReload;
+// 網址上的 ?r= 只用來跳過快取，載入後清掉
+if (/[?&]r=\d+/.test(location.search)) history.replaceState(null, "", location.pathname);
 checkUpdate();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
 

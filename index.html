@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.10.0">
+<link rel="stylesheet" href="style.css?v=1.10.1">
 </head>
 <body>
 <header class="topbar">
@@ -301,10 +301,12 @@
     <div class="card" id="notify-card">
       <h2>版本更新通知</h2>
       <label class="inline small">通知內容從<select id="nt-from"></select>到最新版</label>
+      <label class="inline small">寄件 Gmail 帳號<input id="nt-sender" type="email" autocomplete="email" style="width:auto;flex:1;min-width:200px"></label>
       <p class="muted small" id="nt-status"></p>
       <div id="nt-preview" class="nt-preview"></div>
       <div class="row">
-        <button class="primary" id="nt-mail">用郵件 App 寄給所有會員</button>
+        <button class="primary" id="nt-mail">用 Gmail 寄給所有會員</button>
+        <button id="nt-gmail-app">用 Gmail App 開啟</button>
         <button id="nt-copy-to">複製收件人</button>
         <button id="nt-copy-body">複製信件內容</button>
       </div>
@@ -464,6 +466,6 @@
   </form>
 </dialog>
 
-<script type="module" src="app.js?v=1.10.0"></script>
+<script type="module" src="app.js?v=1.10.1"></script>
 </body>
 </html>

@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.10.1";
 const CHANGELOG = [
+  { v: "1.10.1", date: "2026-11-13", notes: [
+    "管理者：版本更新通知改用 Gmail 寄出（可指定寄件 Gmail 帳號，預設 5067ent@gmail.com），也可直接開 Gmail App"
+  ]},
   { v: "1.10.0", date: "2026-11-13", notes: [
     "管理者：新增「版本更新通知」，一鍵用郵件 App 把更新內容寄給所有會員（只寫一般使用者看得到的更新，管理者相關的不寫）"
   ]},
@@ -1305,15 +1308,30 @@ function updateNotifyPreview() {
   $("nt-status").textContent = (notifyState.last ? `上次通知到 v${notifyState.last}。` : "還沒發過更新通知。") +
     (rel.length ? `這封信包含 ${rel.length} 個版本的更新，會寄給 ${notifyState.emails.length} 位會員。` : "目前沒有需要通知會員的更新（管理者相關的更新不會寄出）。");
   $("nt-preview").textContent = rel.length ? body : "";
-  ["nt-mail", "nt-copy-to", "nt-copy-body", "nt-done"].forEach((id) => ($(id).disabled = !rel.length));
+  ["nt-mail", "nt-gmail-app", "nt-copy-to", "nt-copy-body", "nt-done"].forEach((id) => ($(id).disabled = !rel.length));
 }
 $("nt-from").onchange = updateNotifyPreview;
+// 用 Gmail 寄出：開 Gmail 撰寫畫面（指定寄件帳號），收件人放密件副本
+const GMAIL_KEY = "ent-gmail-sender";
+function gmailSender() { try { return localStorage.getItem(GMAIL_KEY) || "5067ent@gmail.com"; } catch { return "5067ent@gmail.com"; } }
+$("nt-sender").value = gmailSender();
+$("nt-sender").onchange = () => { try { localStorage.setItem(GMAIL_KEY, $("nt-sender").value.trim()); } catch {} };
 $("nt-mail").onclick = () => {
   const { subject, body } = notifyMail();
-  const href = `mailto:${encodeURIComponent(S.user.email)}?bcc=${notifyState.emails.map(encodeURIComponent).join(",")}` +
+  const from = $("nt-sender").value.trim() || gmailSender();
+  const url = "https://mail.google.com/mail/?view=cm&fs=1" +
+    `&authuser=${encodeURIComponent(from)}&to=${encodeURIComponent(from)}` +
+    `&bcc=${encodeURIComponent(notifyState.emails.join(","))}` +
+    `&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if (url.length > 7500) toast("內容或收件人太多，Gmail 可能裝不下；可改用「複製收件人」和「複製信件內容」", 6000);
+  window.open(url, "_blank", "noopener");
+};
+// iPhone／Android 的 Gmail App
+$("nt-gmail-app").onclick = () => {
+  const { subject, body } = notifyMail();
+  const from = $("nt-sender").value.trim() || gmailSender();
+  location.href = `googlegmail:///co?to=${encodeURIComponent(from)}&bcc=${encodeURIComponent(notifyState.emails.join(","))}` +
     `&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  if (href.length > 8000) toast("內容或收件人太多，郵件 App 可能裝不下；也可以用「複製收件人」和「複製信件內容」", 6000);
-  location.href = href;
 };
 async function copyText(text, ok) {
   try { await navigator.clipboard.writeText(text); toast(ok); }

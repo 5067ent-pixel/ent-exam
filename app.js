@@ -52,8 +52,13 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.9.0";
 const CHANGELOG = [
+  { v: "1.9.0", date: "2026-11-13", notes: [
+    "新增「依章節練習」：依 Scott-Brown 冊別與章節勾選，讀到哪練到哪；可用「從…到…」一次選一段",
+    "每章顯示已做題數與答對率，整章做完會打勾",
+    "可選只出沒做過的或只出錯題、題數、依章節順序或隨機、練習或模擬考；選擇會記住，首頁可一鍵繼續"
+  ]},
   { v: "1.8.2", date: "2026-11-12", notes: [
     "頁尾新增「重新整理」按鈕：手機或加到主畫面時沒有重新整理鍵，也能一鍵載入最新版",
     "「立即更新」改為強制略過快取重新載入"
@@ -357,6 +362,12 @@ async function handleUser(u) {
     S.stars = d.starred || {};
     S.groups = d.groups || {};
     S.prefs = { expl: true, ...readLocalPrefs(), ...(d.prefs || {}) };
+    if (!CH.sel.size && d.prefs?.chap?.sel?.length) {
+      const c = d.prefs.chap;
+      CH.sel = new Set(c.sel); CH.vol = c.vol || CH.vol; CH.filter = c.filter || CH.filter;
+      CH.count = c.count ?? CH.count; CH.order = c.order || CH.order; CH.mode = c.mode || CH.mode;
+      saveCH(false);
+    }
     syncPrefUI();
     await loadBank();
     $("nav").hidden = false;
@@ -464,6 +475,7 @@ function go(name) {
   if (name === "admin" && S.admin) { S.quiz = null; renderAdmin(); }
   if (name === "wrong") { S.quiz = null; renderWrongBook(); show("wrong"); }
   if (name === "starred") { S.quiz = null; renderStarred(); show("starred"); }
+  if (name === "chapters") { S.quiz = null; renderChapters(); show("chapters"); }
 }
 document.addEventListener("click", (e) => {
   const g = e.target.closest("[data-go]");
@@ -702,6 +714,164 @@ $("sv-practice").onclick = () => {
   startQuiz(shuffle(list.slice()).slice(0, 100), "practice", "starred");
 };
 
+/* ---------- 依章節練習 ---------- */
+const CH_KEY = "ent-chap-v1";
+const SECTIONS = {
+  "1": [[1, 51, "基礎科學 Basic Sciences"], [52, 86, "頭頸內分泌外科 Endocrine Surgery"], [87, 117, "鼻科 Rhinology"]],
+  "2": [[1, 45, "小兒 Paediatrics"], [46, 96, "耳科 The Ear"], [97, 116, "顱底 Skull Base"]],
+  "3": [[1, 79, "頭頸 Head and Neck"], [80, 97, "整形重建 Plastic Surgery"]]
+};
+const CH = (() => {
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(CH_KEY)) || {}; } catch {}
+  return { sel: new Set(d.sel || []), vol: d.vol || "1", filter: d.filter || "all", count: d.count ?? "20", order: d.order || "seq", mode: d.mode || "practice" };
+})();
+function saveCH(sync = true) {
+  const o = { sel: [...CH.sel], vol: CH.vol, filter: CH.filter, count: CH.count, order: CH.order, mode: CH.mode };
+  try { localStorage.setItem(CH_KEY, JSON.stringify(o)); } catch {}
+  if (sync) { clearTimeout(saveCH._t); saveCH._t = setTimeout(() => saveUser(new FieldPath("prefs", "chap"), o), 1500); }
+}
+function chapOf(q) {
+  const m = /Scott-Brown\s*8e\s*,\s*Vol\s*(\d)\s*,\s*Ch\s*([0-9]+)([a-z]?)/i.exec(q.source || "");
+  return m ? { key: `${m[1]}-${+m[2]}${m[3].toLowerCase()}`, vol: m[1], num: +m[2], suf: m[3].toLowerCase() } : null;
+}
+// 章節索引：key → { vol, num, suf, title, qs }
+function chapterIndex() {
+  if (chapterIndex._bank === S.bank) return chapterIndex._idx;
+  const idx = new Map();
+  for (const q of S.bank) {
+    const c = chapOf(q);
+    if (!c) continue;
+    if (!idx.has(c.key)) idx.set(c.key, { ...c, title: q.chapter || "", qs: [] });
+    const e = idx.get(c.key);
+    if (!e.title && q.chapter) e.title = q.chapter;
+    e.qs.push(q);
+  }
+  chapterIndex._bank = S.bank; chapterIndex._idx = idx;
+  return idx;
+}
+const chapSort = (a, b) => a.vol - b.vol || a.num - b.num || a.suf.localeCompare(b.suf);
+const chapLabel = (c) => `Ch ${c.num}${c.suf}`;
+function chapStats(c) {
+  let ans = 0, cor = 0, wrong = 0;
+  for (const q of c.qs) { const p = S.progress[q.id]; if (p) { ans++; if (p.last) cor++; } if (isWrong(p)) wrong++; }
+  return { ans, cor, wrong, total: c.qs.length };
+}
+function chapPool() {
+  const idx = chapterIndex();
+  const chs = [...CH.sel].map((k) => idx.get(k)).filter(Boolean).sort(chapSort);
+  let qs = chs.flatMap((c) => c.qs.slice().sort((a, b) => a.id.localeCompare(b.id)));
+  if (CH.filter === "new") qs = qs.filter((q) => !S.progress[q.id]);
+  if (CH.filter === "wrong") qs = qs.filter((q) => isWrong(S.progress[q.id]));
+  return { chs, qs };
+}
+// 把選到的章節濃縮成「Vol 2 Ch 45–47、Ch 50」
+function chapSummary(chs) {
+  const parts = [];
+  for (const v of ["1", "2", "3"]) {
+    const list = chs.filter((c) => c.vol === v);
+    if (!list.length) continue;
+    const runs = [];
+    for (const c of list) {
+      const last = runs[runs.length - 1];
+      if (last && !c.suf && !last.end.suf && c.num === last.end.num + 1) last.end = c; else runs.push({ start: c, end: c });
+    }
+    parts.push(`Vol ${v} ` + runs.map((x) => x.start === x.end ? chapLabel(x.start) : `${chapLabel(x.start)}–${x.end.num}`).join("、"));
+  }
+  return parts.join("；");
+}
+function renderChapHome() {
+  const { chs, qs } = chapPool();
+  $("chap-home-go").hidden = !chs.length;
+  $("chap-home-sum").textContent = chs.length
+    ? `目前選了 ${chs.length} 章：${chapSummary(chs)}（符合條件 ${qs.length} 題）`
+    : "還沒選章節。勾選讀過的 Scott-Brown 章節，就只出那些章節的題目。";
+}
+function renderChapters() {
+  const idx = chapterIndex();
+  const all = [...idx.values()].sort(chapSort);
+  if (!all.some((c) => c.vol === CH.vol)) CH.vol = all[0]?.vol || "1";
+  const selIn = (v) => all.filter((c) => c.vol === v && CH.sel.has(c.key)).length;
+  $("ch-vols").innerHTML = ["1", "2", "3"].filter((v) => all.some((c) => c.vol === v)).map((v) =>
+    `<button type="button" role="tab" aria-selected="${CH.vol === v}" class="vol-tab ${CH.vol === v ? "on" : ""}" data-vol="${v}">Vol ${v}${selIn(v) ? `<span class="vol-n">${selIn(v)}</span>` : ""}</button>`).join("");
+  const list = all.filter((c) => c.vol === CH.vol);
+  const opts = list.map((c) => `<option value="${c.key}">${chapLabel(c)} ${esc(c.title.slice(0, 28))}</option>`).join("");
+  const pf = $("ch-from").value, pt = $("ch-to").value;
+  $("ch-from").innerHTML = opts; $("ch-to").innerHTML = opts;
+  if (list.some((c) => c.key === pf)) $("ch-from").value = pf;
+  $("ch-to").value = list.some((c) => c.key === pt) ? pt : (list[list.length - 1]?.key || "");
+  const secs = SECTIONS[CH.vol] || [[1, 999, ""]];
+  $("ch-list").innerHTML = secs.map(([a, b, name]) => {
+    const cs = list.filter((c) => c.num >= a && c.num <= b);
+    if (!cs.length) return "";
+    const allOn = cs.every((c) => CH.sel.has(c.key));
+    return `<div class="ch-sec"><div class="ch-sec-head"><b>${esc(name)}</b><span class="muted small">Ch ${a}–${b}</span>
+      <button type="button" class="link small" data-sec="${cs.map((c) => c.key).join(",")}" data-on="${allOn ? 1 : 0}">${allOn ? "取消本段" : "全選本段"}</button></div>` +
+      cs.map((c) => {
+        const st = chapStats(c), on = CH.sel.has(c.key), done = st.ans === st.total;
+        const r = st.ans ? st.cor / st.ans : null;
+        const cls = r == null ? "" : r >= 0.8 ? "good" : r >= 0.6 ? "mid" : "low";
+        return `<label class="ch-row ${on ? "on" : ""}"><input type="checkbox" data-ch="${c.key}" ${on ? "checked" : ""}>
+          <span class="ch-main"><span class="ch-title"><b>${chapLabel(c)}</b> ${esc(c.title)}</span>
+          <span class="ch-meta">${done ? `<span class="ch-done">✓ 已做完</span>` : `已做 ${st.ans}/${st.total}`}${r == null ? "" : `・答對 <b class="${cls}">${Math.round(r * 100)}%</b>`}${st.wrong ? `・<span class="wrong-n">錯 ${st.wrong}</span>` : ""}</span></span>
+          <span class="ch-bar-mini"><span class="${cls}" style="width:${Math.round((st.ans / st.total) * 100)}%"></span></span></label>`;
+      }).join("") + `</div>`;
+  }).join("") || `<p class="muted">題庫裡還沒有這一冊的題目。</p>`;
+  $("ch-filter").value = CH.filter; $("ch-count").value = String(CH.count); $("ch-order").value = CH.order; $("ch-mode").value = CH.mode;
+  updateChapSum();
+}
+function updateChapSum() {
+  const { chs, qs } = chapPool();
+  const n = +CH.count;
+  $("ch-sum").innerHTML = chs.length ? `已選 <b>${chs.length}</b> 章・符合 <b>${qs.length}</b> 題${n && qs.length > n ? `（出 ${n} 題）` : ""}` : "還沒選章節";
+  $("ch-start").disabled = !qs.length;
+}
+$("ch-vols").onclick = (e) => {
+  const b = e.target.closest("[data-vol]");
+  if (!b) return;
+  CH.vol = b.dataset.vol; saveCH(false); renderChapters();
+};
+$("ch-list").onchange = (e) => {
+  const k = e.target.dataset?.ch;
+  if (!k) return;
+  e.target.checked ? CH.sel.add(k) : CH.sel.delete(k);
+  saveCH(); renderChapters();
+};
+$("ch-list").onclick = (e) => {
+  const b = e.target.closest("[data-sec]");
+  if (!b) return;
+  const keys = b.dataset.sec.split(","), on = b.dataset.on === "1";
+  keys.forEach((k) => (on ? CH.sel.delete(k) : CH.sel.add(k)));
+  saveCH(); renderChapters();
+};
+$("ch-range").onclick = () => {
+  const idx = chapterIndex();
+  let a = idx.get($("ch-from").value), b = idx.get($("ch-to").value);
+  if (!a || !b) return;
+  if (chapSort(a, b) > 0) [a, b] = [b, a];
+  const keys = [...idx.values()].filter((c) => c.vol === a.vol && chapSort(c, a) >= 0 && chapSort(c, b) <= 0).map((c) => c.key);
+  keys.forEach((k) => CH.sel.add(k));
+  saveCH(); renderChapters();
+  toast(`已加入 ${keys.length} 章`);
+};
+$("ch-clear").onclick = () => {
+  if (!CH.sel.size || !confirm("取消所有已選的章節？")) return;
+  CH.sel.clear(); saveCH(); renderChapters();
+};
+[["ch-filter", "filter"], ["ch-count", "count"], ["ch-order", "order"], ["ch-mode", "mode"]].forEach(([id, k]) => {
+  $(id).onchange = () => { CH[k] = $(id).value; saveCH(); updateChapSum(); };
+});
+function startChapterQuiz() {
+  const { qs } = chapPool();
+  if (!qs.length) { toast(CH.sel.size ? "這些章節沒有符合條件的題目" : "請先選章節"); return; }
+  const n = +CH.count;
+  let list = CH.order === "rand" ? shuffle(qs.slice()) : qs.slice();
+  if (n) list = CH.order === "rand" ? list.slice(0, n) : list.slice(0, n);
+  startQuiz(list, CH.mode, "chapter");
+}
+$("ch-start").onclick = startChapterQuiz;
+$("chap-home-go").onclick = startChapterQuiz;
+
 /* ---------- 首頁 ---------- */
 function catOptionsHTML(withAll) {
   return (withAll ? `<option value="all">全部範圍</option>` : "") +
@@ -771,6 +941,7 @@ function renderHome() {
   renderSetupGroups();
   syncPrefUI();
   updatePoolInfo();
+  renderChapHome();
   renderRecent();
 }
 function buildPool() {
@@ -930,7 +1101,7 @@ function renderQ() {
   const Q = S.quiz, q = Q.qs[Q.i], sel = Q.answers[Q.i];
   const rev = Q.mode === "practice" && Q.revealed[Q.i];
   const last = Q.i === Q.qs.length - 1;
-  const label = { review: "錯題複習　", starred: "★ 星號題目　" }[Q.kind] || "";
+  const label = { review: "錯題複習　", starred: "★ 星號題目　", chapter: "章節練習　" }[Q.kind] || "";
   $("quiz-pos").textContent = `${label}第 ${Q.i + 1} / ${Q.qs.length} 題`;
   $("quiz-pos-big").textContent = `${label}第 ${Q.i + 1} / ${Q.qs.length} 題`;
   const done = Q.mode === "practice" ? Q.revealed.filter(Boolean).length : Q.answers.filter((a) => a != null).length;
@@ -1051,7 +1222,7 @@ function finishQuiz() {
   if (Q.mode === "exam") recordAnswers(items.map((x) => ({ id: x.q.id, ok: x.ok, sel: x.sel })));
   const correct = items.filter((x) => x.ok).length;
 
-  $("result-title").textContent = Q.kind === "review" ? "錯題複習結果" : Q.kind === "starred" ? "星號題目練習結果" : "成績";
+  $("result-title").textContent = { review: "錯題複習結果", starred: "星號題目練習結果", chapter: "章節練習結果" }[Q.kind] || "成績";
   const note = $("result-note");
   note.hidden = Q.kind !== "review";
   if (Q.kind === "review") {

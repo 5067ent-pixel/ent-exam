@@ -288,3 +288,32 @@ details.rq { border: none; background: #fff; box-shadow: 0 1px 2px rgba(16,40,50
 
 .update-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 12px; background: #fff4d6; color: #7a4a00; font-size: .9rem; font-weight: 700; }
 .update-bar button { min-height: 36px; padding: 0 14px; border: none; background: var(--primary); color: #fff; font-weight: 700; border-radius: 10px; }
+
+/* 依章節練習 */
+.chap-card .row { margin-bottom: 0; }
+.vol-tabs { display: flex; gap: 6px; margin: 4px 0 12px; }
+.vol-tab { flex: 1; border-radius: 12px; font-weight: 700; background: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.vol-tab.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.vol-n { font-size: .72rem; background: #ffb867; color: #5a3200; border-radius: 999px; padding: 0 7px; line-height: 1.6; }
+.ch-range { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.ch-range label { margin: 0; flex: 1 1 140px; }
+.ch-range select { flex: 1; min-width: 0; font-size: .85rem; padding: 7px 8px; }
+.ch-sec { margin-top: 14px; }
+.ch-sec-head { display: flex; align-items: baseline; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.ch-sec-head b { font-size: .95rem; }
+.ch-sec-head .link { margin-left: auto; }
+.ch-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 46px; align-items: center; gap: 10px; padding: 9px 8px; margin: 0; border-radius: 12px; cursor: pointer; }
+.ch-row:hover { background: var(--bg); }
+.ch-row.on { background: var(--sel); }
+.ch-row input { width: 20px; height: 20px; accent-color: var(--primary); margin: 0; }
+.ch-main { display: flex; flex-direction: column; min-width: 0; }
+.ch-title { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-meta { font-size: .75rem; color: var(--muted); }
+.ch-meta b.good { color: #1e8e5a; } .ch-meta b.low { color: #b45309; } .ch-meta b.mid { color: #1f7a8c; }
+.ch-done { color: #1e8e5a; font-weight: 700; }
+.ch-bar-mini { height: 6px; border-radius: 3px; background: #e8eef0; overflow: hidden; }
+.ch-bar-mini span { display: block; height: 100%; background: #1f7a8c; }
+.ch-bar-mini span.good { background: #1e8e5a; } .ch-bar-mini span.low { background: #e07a1f; }
+.ch-bar { align-items: center; }
+.ch-bar .ch-sum { flex: 1; font-size: .88rem; }
+.ch-bar #ch-start { flex: 0 0 auto; min-width: 120px; }

@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.8.2">
+<link rel="stylesheet" href="style.css?v=1.9.0">
 </head>
 <body>
 <header class="topbar">
@@ -95,6 +95,15 @@
       </button>
     </section>
 
+    <div class="card chap-card">
+      <div class="card-head"><h2>依章節練習</h2><span class="muted small">讀到哪，練到哪</span></div>
+      <p class="small" id="chap-home-sum">還沒選章節。勾選讀過的 Scott-Brown 章節，就只出那些章節的題目。</p>
+      <div class="row">
+        <button class="primary" id="chap-home-go" hidden>繼續練這些章節</button>
+        <button data-go="chapters">選章節</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-head"><h2>各科答對率</h2><span class="muted small">點一科只練這科</span></div>
       <div id="cat-bars" class="bars"></div>
@@ -143,6 +152,55 @@
     <div class="card">
       <h2>最近紀錄</h2>
       <ul id="recent" class="list"></ul>
+    </div>
+  </section>
+
+  <!-- 依章節練習 -->
+  <section id="view-chapters" class="view" hidden>
+    <div class="card">
+      <h2>依章節練習</h2>
+      <p class="muted small">勾選讀過的章節，或用「從…到…」一次選一段。每章右邊是你在這章的進度。</p>
+      <div class="vol-tabs" id="ch-vols" role="tablist"></div>
+      <div class="ch-range">
+        <label class="inline small">從<select id="ch-from"></select></label>
+        <label class="inline small">到<select id="ch-to"></select></label>
+        <button id="ch-range">加入這段</button>
+        <button class="link danger-link" id="ch-clear">全部取消</button>
+      </div>
+      <div id="ch-list"></div>
+    </div>
+    <div class="card">
+      <h2>出題設定</h2>
+      <div class="grid2">
+        <label>出哪些題目
+          <select id="ch-filter">
+            <option value="all">全部題目</option>
+            <option value="new">只出沒做過的</option>
+            <option value="wrong">只出錯題</option>
+          </select>
+        </label>
+        <label>題數
+          <select id="ch-count">
+            <option value="0">全部</option><option>10</option><option selected>20</option><option>50</option><option>100</option>
+          </select>
+        </label>
+        <label>順序
+          <select id="ch-order">
+            <option value="seq">依章節順序</option>
+            <option value="rand">隨機</option>
+          </select>
+        </label>
+        <label>模式
+          <select id="ch-mode">
+            <option value="practice">練習（每題看詳解）</option>
+            <option value="exam">模擬考（限時）</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="actionbar ch-bar">
+      <span class="ch-sum" id="ch-sum"></span>
+      <button class="primary" id="ch-start">開始</button>
     </div>
   </section>
 
@@ -390,6 +448,6 @@
   </form>
 </dialog>
 
-<script type="module" src="app.js?v=1.8.2"></script>
+<script type="module" src="app.js?v=1.9.0"></script>
 </body>
 </html>

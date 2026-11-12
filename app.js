@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 const CHANGELOG = [
+  { v: "1.7.1", date: "2026-11-12", notes: [
+    "修正手機瀏覽器一直顯示舊版：程式檔加上版本號，並在有新版本時顯示「立即更新」提示"
+  ]},
   { v: "1.7.0", date: "2026-11-12", notes: [
     "新密碼規則：至少 8 個字元、含英文字母與數字、不可包含 Email 帳號名稱或常見密碼，註冊時即時顯示強度",
     "密碼欄可按「顯示／隱藏」",
@@ -419,6 +422,20 @@ $("btn-changelog").onclick = () => {
 };
 $("changelog-close").onclick = () => $("dlg-changelog").close();
 renderFooter();
+
+/* ---------- 新版本檢查（避免手機瀏覽器一直用舊快取） ---------- */
+const verNum = (v) => String(v).split(".").map((x) => +x || 0).reduce((a, x) => a * 1000 + x, 0);
+async function checkUpdate() {
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const { v } = await r.json();
+    if (v && verNum(v) > verNum(APP_VERSION)) $("update-bar").hidden = false;
+  } catch {}
+}
+$("update-go").onclick = () => location.reload();
+checkUpdate();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
 
 /* ---------- 導覽 ---------- */
 function go(name) {

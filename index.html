@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.10.1">
+<link rel="stylesheet" href="style.css?v=1.11.0">
 </head>
 <body>
 <header class="topbar">
@@ -305,7 +305,8 @@
       <p class="muted small" id="nt-status"></p>
       <div id="nt-preview" class="nt-preview"></div>
       <div class="row">
-        <button class="primary" id="nt-mail">用 Gmail 寄給所有會員</button>
+        <button class="primary" id="nt-send">一鍵寄出</button>
+        <button id="nt-mail">開 Gmail 寄</button>
         <button id="nt-gmail-app">用 Gmail App 開啟</button>
         <button id="nt-copy-to">複製收件人</button>
         <button id="nt-copy-body">複製信件內容</button>
@@ -313,6 +314,11 @@
       <div class="row">
         <button class="link" id="nt-done">寄出了，標記為已通知</button>
       </div>
+      <details class="small">
+        <summary>一鍵寄信設定</summary>
+        <p class="muted">在寄件 Gmail 帳號建立 Apps Script（程式在 GitHub repo 的 tools/notify-mail.gs），部署成網頁應用程式後，把網址貼在這裡。</p>
+        <div class="row"><input id="nt-script" placeholder="https://script.google.com/macros/s/…/exec"><button id="nt-script-save">儲存</button></div>
+      </details>
       <p class="muted small">收件人放在密件副本（BCC），會員彼此看不到對方的 Email。標註「管理者：」的更新不會寫進信裡。</p>
     </div>
 
@@ -466,6 +472,6 @@
   </form>
 </dialog>
 
-<script type="module" src="app.js?v=1.10.1"></script>
+<script type="module" src="app.js?v=1.11.0"></script>
 </body>
 </html>

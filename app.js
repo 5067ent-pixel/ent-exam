@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.10.1";
+const APP_VERSION = "1.11.0";
 const CHANGELOG = [
+  { v: "1.11.0", date: "2026-11-13", notes: [
+    "管理者：版本更新通知可「一鍵寄出」，透過寄件 Gmail 帳號的 Apps Script 直接寄給所有會員，不用再開 Gmail"
+  ]},
   { v: "1.10.1", date: "2026-11-13", notes: [
     "管理者：版本更新通知改用 Gmail 寄出（可指定寄件 Gmail 帳號，預設 5067ent@gmail.com），也可直接開 Gmail App"
   ]},
@@ -1292,6 +1295,8 @@ async function renderNotify() {
   try {
     const [m, inv] = await Promise.all([getDoc(doc(db, "meta", "notify")), getDocs(collection(db, "allowlist"))]);
     notifyState.last = m.exists() ? m.data().v : null;
+    notifyState.script = m.exists() ? (m.data().script || "") : "";
+    $("nt-script").value = notifyState.script;
     notifyState.emails = inv.docs.map((d) => d.id);
   } catch (e) { $("nt-status").textContent = "讀取失敗：" + errMsg(e); return; }
   // 預設從「上次通知之後」第一個有會員更新的版本開始；從沒通知過就只寄最近一個版本
@@ -1309,6 +1314,8 @@ function updateNotifyPreview() {
     (rel.length ? `這封信包含 ${rel.length} 個版本的更新，會寄給 ${notifyState.emails.length} 位會員。` : "目前沒有需要通知會員的更新（管理者相關的更新不會寄出）。");
   $("nt-preview").textContent = rel.length ? body : "";
   ["nt-mail", "nt-gmail-app", "nt-copy-to", "nt-copy-body", "nt-done"].forEach((id) => ($(id).disabled = !rel.length));
+  $("nt-send").disabled = !rel.length || !notifyState.script;
+  $("nt-send").title = notifyState.script ? "" : "請先在下方設定一鍵寄信網址";
 }
 $("nt-from").onchange = updateNotifyPreview;
 // 用 Gmail 寄出：開 Gmail 撰寫畫面（指定寄件帳號），收件人放密件副本
@@ -1343,8 +1350,40 @@ $("nt-done").onclick = async () => {
   const v = APP_VERSION;
   if (!confirm(`確定已寄出？之後只會通知 v${v} 以後的更新。`)) return;
   try {
-    await setDoc(doc(db, "meta", "notify"), { v, at: serverTimestamp(), by: S.user.email });
+    await setDoc(doc(db, "meta", "notify"), { v, at: serverTimestamp(), by: S.user.email }, { merge: true });
     toast("已標記為已通知"); renderNotify();
+  } catch (e) { toast("儲存失敗：" + errMsg(e)); }
+};
+
+// 一鍵寄出：交給 5067ent 帳號裡的 Apps Script，用 Gmail 寄（收件人由它讀邀請名單，網頁不指定）
+$("nt-send").onclick = async () => {
+  const { subject, body } = notifyMail();
+  if (!notifyState.script) { toast("請先設定一鍵寄信網址"); return; }
+  if (!confirm(`用 Gmail 寄出「${subject}」給邀請名單上所有會員（密件副本）？`)) return;
+  $("nt-send").disabled = true;
+  toast("寄送中…", 15000);
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const r = await fetch(notifyState.script, {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ idToken, email: S.user.email.toLowerCase(), subject, body })
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "寄送失敗");
+    await setDoc(doc(db, "meta", "notify"), { v: APP_VERSION, at: serverTimestamp(), by: S.user.email }, { merge: true });
+    toast(`已由 ${j.from} 寄給 ${j.sent} 位會員，並標記為已通知`, 5000);
+    renderNotify();
+  } catch (e) {
+    toast("寄送失敗：" + (e.message || e), 6000);
+    $("nt-send").disabled = false;
+  }
+};
+$("nt-script-save").onclick = async () => {
+  const url = $("nt-script").value.trim();
+  if (url && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) { toast("網址格式應為 https://script.google.com/macros/s/…/exec"); return; }
+  try {
+    await setDoc(doc(db, "meta", "notify"), { script: url }, { merge: true });
+    toast(url ? "已儲存一鍵寄信網址" : "已清除"); renderNotify();
   } catch (e) { toast("儲存失敗：" + errMsg(e)); }
 };
 

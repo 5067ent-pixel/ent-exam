@@ -52,8 +52,12 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.8.0";
 const CHANGELOG = [
+  { v: "1.8.0", date: "2026-11-12", notes: [
+    "「📍 本題依據」加上頁碼：顯示依據的小節與「PDF 第幾頁（書上頁碼）」",
+    "「📄 開啟本章 PDF」下方提示要翻到第幾頁；Drive 搜尋改為比對檔名，結果更精準"
+  ]},
   { v: "1.7.1", date: "2026-11-12", notes: [
     "修正手機瀏覽器一直顯示舊版：程式檔加上版本號，並在有新版本時顯示「立即更新」提示"
   ]},
@@ -475,11 +479,18 @@ function chapterKey(q) {
   const m = /Scott-Brown\s*8e\s*,\s*Vol\s*(\d)\s*,\s*Ch\s*([0-9]+)([a-z]?)/i.exec(q.source || "");
   return m ? `Vol${m[1]}_Ch${m[2].padStart(3, "0")}${m[3].toLowerCase()}` : "";
 }
+// 本題在本章 PDF 的第幾頁（loc 內寫成「PDF 第 N 頁」）
+function pdfPage(q) {
+  for (const l of q.loc || []) { const m = /PDF\s*第\s*(\d+)\s*頁/.exec(l); if (m) return +m[1]; }
+  return 0;
+}
 function pdfHTML(q) {
   const k = chapterKey(q);
   if (!k) return "";
-  const url = "https://drive.google.com/drive/search?q=" + encodeURIComponent(k);
-  return `<div class="pdf-link"><a href="${url}" target="_blank" rel="noopener">📄 開啟本章 PDF（Google Drive：${k}）</a></div>`;
+  const url = "https://drive.google.com/drive/search?q=" + encodeURIComponent(`title:${k}`);
+  const p = pdfPage(q);
+  return `<div class="pdf-link"><a href="${url}" target="_blank" rel="noopener">📄 開啟本章 PDF（Google Drive：${k}）</a>` +
+    (p ? `<div class="muted small">打開後翻到第 ${p} 頁即可看到原文</div>` : "") + `</div>`;
 }
 // 本題依據的段落（頁碼、段落標題、KEY POINTS 第幾點），不含原文
 function locHTML(q) {

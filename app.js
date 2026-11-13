@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.11.1";
 const CHANGELOG = [
+  { v: "1.11.1", date: "2026-11-13", notes: [
+    "所有彈出視窗右上角加上 ✕ 關閉鈕（原本下方的關閉／取消按鈕保留）"
+  ]},
   { v: "1.11.0", date: "2026-11-13", notes: [
     "管理者：版本更新通知可「一鍵寄出」，透過寄件 Gmail 帳號的 Apps Script 直接寄給所有會員，不用再開 Gmail"
   ]},
@@ -1787,3 +1790,17 @@ $("ed-save").onclick = async () => {
     renderQList(); renderSnapshots(); toast("已儲存");
   } catch (e) { $("ed-err").textContent = "儲存失敗：" + errMsg(e); }
 };
+
+/* ---------- 彈出視窗右上角 ✕ ---------- */
+// 每個 <dialog> 右上角加關閉鈕；原本下方的關閉／取消按鈕保留
+document.querySelectorAll("dialog").forEach((dlg) => {
+  const x = document.createElement("button");
+  x.type = "button";
+  x.className = "dlg-x";
+  x.setAttribute("aria-label", "關閉");
+  x.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>`;
+  x.onclick = () => dlg.close();
+  dlg.prepend(x);
+});
+// 變更密碼視窗不論用哪種方式關閉，都清空密碼欄
+$("dlg-account").addEventListener("close", resetPwForm);

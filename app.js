@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.11.2";
+const APP_VERSION = "1.11.3";
 const CHANGELOG = [
+  { v: "1.11.3", date: "2026-11-16", notes: [
+    "「📍 本題依據」只寫書上的冊別與頁碼，不再顯示 PDF 頁數"
+  ]},
   { v: "1.11.2", date: "2026-11-16", notes: [
     "「📍 本題依據」最上面標出在 Scott-Brown 第幾冊、第幾頁（例如「Vol 2 第 1206 頁」），翻書更快"
   ]},
@@ -525,9 +528,15 @@ function chapterKey(q) {
 // 本題依據的段落（頁碼、段落標題、KEY POINTS 第幾點），不含原文
 // 書上頁碼的寫法：p. 1206、pp. 1206–1207、書上第 1206 頁、第 1206 頁（前面是「PDF」的頁數不算）
 const BOOK_PAGE_RE = /(?<!PDF\s*)(?:\bp{1,2}\.\s*(\d{1,4})(?:\s*[–\-~]\s*(\d{1,4}))?(?:\s*頁)?|(?:書上\s*)?第\s*(\d{1,4})(?:\s*[–\-~]\s*(\d{1,4}))?\s*頁)/gi;
+// 不顯示 PDF 頁數：去掉「（PDF 第 4 頁）」「(PDF p. 4)」「PDF 第 2–3 頁」這類寫法
+const stripPdf = (l) => l
+  .replace(/\s*[（(]\s*PDF[^）)]*[）)]\s*/gi, " ")
+  .replace(/PDF\s*(?:第\s*)?(?:pp?\.\s*)?\d{1,4}(?:\s*[–\-~]\s*\d{1,4})?\s*頁?\s*[，,、・;；]?\s*/gi, "")
+  .replace(/\s+([・，、；])/g, "$1").replace(/\s{2,}/g, " ")
+  .trim();
 const pageOf = (a, b, c, d) => { const x = a || c, y = b || d; return y ? `${x}–${y}` : x; };
 function locHTML(q) {
-  const loc = (q.loc || []).filter(Boolean);
+  const loc = (q.loc || []).map((l) => stripPdf(String(l))).filter(Boolean);
   const c = chapOf(q);
   if (!loc.length) return "";
   const vol = c ? `Vol ${c.vol}` : "";

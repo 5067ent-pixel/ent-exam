@@ -334,6 +334,8 @@ dialog > h2:first-of-type, dialog > form > h2:first-of-type { padding-right: 44p
 /* 錯題本 PDF（列印） */
 #print-area { display: none; }
 body.printing > *:not(#print-area) { display: none !important; }
+/* 用系統內建中文字體，不用網路字體：Safari 產生 PDF 時不必嵌入大型字型，快很多 */
+#print-area { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", system-ui, sans-serif; }
 body.printing #print-area { display: block; max-width: 820px; margin: 0 auto; padding: 0 14px 40px; background: #fff; }
 .p-tools { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 0; background: #fff; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .p-tools .small { color: var(--muted); flex: 1 1 260px; }
@@ -351,7 +353,7 @@ body.printing #print-area { display: block; max-width: 820px; margin: 0 auto; pa
   #print-area .pq-ans { font-weight: 700; font-size: .9rem; }
   #print-area .pq-expl { background: var(--bg); border-radius: 10px; padding: 8px 10px; margin: 6px 0; }
   #print-area .pq-ref { font-size: .8rem; color: var(--muted); }
-  #print-area .pq-note .pq-lines { height: 48px; background: repeating-linear-gradient(transparent 0 15px, #ccc 15px 16px); }
+  #print-area .pq-line { height: 18px; border-bottom: 1px solid #ccc; }
 }
 @media print {
   @page { size: A4; margin: 14mm 12mm; }
@@ -374,7 +376,7 @@ body.printing #print-area { display: block; max-width: 820px; margin: 0 auto; pa
   #print-area .pq-ans { font-size: 9.5pt; font-weight: 700; margin-bottom: 3pt; }
   #print-area .pq-expl { background: #f4f7f8; border-radius: 4pt; padding: 5pt 7pt; margin-bottom: 3pt; }
   #print-area .pq-ref { font-size: 8.5pt; color: #333; margin-bottom: 3pt; }
-  #print-area .pq-note .pq-lines { height: 42pt; background: repeating-linear-gradient(transparent 0 13pt, #bbb 13pt 14pt); }
+  #print-area .pq-line { height: 14pt; border-bottom: 1px solid #bbb; }
   #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #print-area .p-tools { display: none !important; }
   body.printing #print-area { max-width: none; padding: 0; }

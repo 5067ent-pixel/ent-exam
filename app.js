@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.12.1";
+const APP_VERSION = "1.12.2";
 const CHANGELOG = [
+  { v: "1.12.2", date: "2026-11-16", notes: [
+    "錯題本 PDF 在 Safari 更快：改用系統內建字體、簡化筆記格線，Safari 先顯示預覽再由你按列印"
+  ]},
   { v: "1.12.1", date: "2026-11-16", notes: [
     "錯題本匯出 PDF 改為先顯示預覽頁，再按「列印／存成 PDF」，修正部分電腦瀏覽器按了沒反應的問題"
   ]},
@@ -1855,7 +1858,7 @@ function exportWrongPDF() {
       <div class="pq-ans">正解：${LETTERS[q.answer]}　你上次選：${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}</div>
       <div class="pq-expl"><b>詳解</b><div>${fmt(q.explanation || "（尚無詳解）")}</div></div>
       ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc((L.lines.some((l) => /Vol \d 第/.test(l)) ? L.lines : [L.head, ...L.lines]).filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
-      <div class="pq-note"><b>我的筆記／更正</b><div class="pq-lines"></div></div>
+      <div class="pq-note"><b>我的筆記／更正</b><div class="pq-line"></div><div class="pq-line"></div><div class="pq-line"></div></div>
     </article>`;
   }).join("");
   const area = $("print-area");
@@ -1872,7 +1875,10 @@ function exportWrongPDF() {
   window.scrollTo(0, 0);
   $("p-print").onclick = () => window.print();
   $("p-back").onclick = () => { document.body.classList.remove("printing"); area.innerHTML = ""; };
-  try { window.print(); } catch (e) { console.error(e); }
+  // Safari 產生列印預覽很慢，不自動叫出，讓使用者看完預覽再按「列印／存成 PDF」
+  const isSafari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+  if (!isSafari) setTimeout(() => { try { window.print(); } catch (e) { console.error(e); } }, 0);
+  else toast("預覽好了，按上方「列印／存成 PDF」", 4000);
 }
 $("wb-pdf").onclick = exportWrongPDF;
 

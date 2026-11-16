@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.12.1";
 const CHANGELOG = [
+  { v: "1.12.1", date: "2026-11-16", notes: [
+    "錯題本匯出 PDF 改為先顯示預覽頁，再按「列印／存成 PDF」，修正部分電腦瀏覽器按了沒反應的問題"
+  ]},
   { v: "1.12.0", date: "2026-11-16", notes: [
     "錯題本可匯出 PDF：依目前選的科目與排序，列出題目、你上次的答案與正解、完整詳解、參考資料與本題依據，每題留有筆記欄方便更正"
   ]},
@@ -1851,19 +1854,25 @@ function exportWrongPDF() {
       <ol class="pq-opts">${opts}</ol>
       <div class="pq-ans">正解：${LETTERS[q.answer]}　你上次選：${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}</div>
       <div class="pq-expl"><b>詳解</b><div>${fmt(q.explanation || "（尚無詳解）")}</div></div>
-      ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc([L.head, ...L.lines].filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
+      ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc((L.lines.some((l) => /Vol \d 第/.test(l)) ? L.lines : [L.head, ...L.lines]).filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
       <div class="pq-note"><b>我的筆記／更正</b><div class="pq-lines"></div></div>
     </article>`;
   }).join("");
   const area = $("print-area");
-  area.innerHTML = `<header class="ph"><h1>ENT 專科練習　錯題本</h1>
+  area.innerHTML = `<div class="p-tools">
+      <button type="button" class="primary" id="p-print">列印／存成 PDF</button>
+      <button type="button" id="p-back">返回錯題本</button>
+      <span class="small">電腦：目的地選「另存為 PDF」。iPhone：按分享 → 列印，再按分享存成 PDF。</span>
+    </div>
+    <header class="ph"><h1>ENT 專科練習　錯題本</h1>
     <div>${cat === "all" ? "全部範圍" : esc(CATS[cat] || cat)}・共 ${list.length} 題・${date}・${esc(S.user?.email || "")}</div>
     <div class="ph-tip">排序：${$("wb-sort").value === "most" ? "答錯次數多的在前" : "最近答錯的在前"}。正解標 ✓，你上次的答案標 ✗；每題下方留有筆記欄可以手寫更正。</div></header>${items}`;
+  // 先切到預覽畫面（列印鍵壞掉的瀏覽器也看得到內容，可再按「列印／存成 PDF」或 Ctrl+P）
   document.body.classList.add("printing");
-  const done = () => { document.body.classList.remove("printing"); area.innerHTML = ""; window.removeEventListener("afterprint", done); };
-  window.addEventListener("afterprint", done);
-  toast("在列印畫面選「儲存為 PDF」（iPhone：分享 → 列印 → 再按分享存成 PDF）", 6000);
-  setTimeout(() => window.print(), 300);
+  window.scrollTo(0, 0);
+  $("p-print").onclick = () => window.print();
+  $("p-back").onclick = () => { document.body.classList.remove("printing"); area.innerHTML = ""; };
+  try { window.print(); } catch (e) { console.error(e); }
 }
 $("wb-pdf").onclick = exportWrongPDF;
 

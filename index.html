@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.11.3">
+<link rel="stylesheet" href="style.css?v=1.12.0">
 </head>
 <body>
 <header class="topbar">
@@ -219,6 +219,7 @@
       </div>
       <div class="row">
         <button class="primary" id="wb-review">複習這些錯題</button>
+        <button id="wb-pdf">匯出 PDF</button>
         <span class="muted small" id="wb-count"></span>
         <label class="toggle small"><input type="checkbox" class="pref-expl"> 展開詳解</label>
       </div>
@@ -472,6 +473,8 @@
   </form>
 </dialog>
 
-<script type="module" src="app.js?v=1.11.3"></script>
+<div id="print-area"></div>
+
+<script type="module" src="app.js?v=1.12.0"></script>
 </body>
 </html>

@@ -330,3 +330,30 @@ dialog { position: fixed; padding-top: 18px; }
 dialog > h2:first-of-type, dialog > form > h2:first-of-type { padding-right: 44px; }
 .dlg-x { position: absolute; top: 10px; right: 10px; width: 40px; height: 40px; min-height: 40px; padding: 0; border: none; border-radius: 12px; background: var(--bg); color: var(--muted); display: flex; align-items: center; justify-content: center; z-index: 2; }
 .dlg-x:hover { color: var(--text); background: var(--line); }
+
+/* 錯題本 PDF（列印） */
+#print-area { display: none; }
+@media print {
+  @page { size: A4; margin: 14mm 12mm; }
+  body.printing { background: #fff; }
+  body.printing > *:not(#print-area) { display: none !important; }
+  body.printing #print-area { display: block; color: #000; font-size: 10.5pt; line-height: 1.55; }
+  #print-area .ph { border-bottom: 2px solid #0e4a5a; padding-bottom: 6pt; margin-bottom: 10pt; }
+  #print-area .ph h1 { font-size: 16pt; margin: 0 0 2pt; color: #0e4a5a; }
+  #print-area .ph-tip { font-size: 9pt; color: #444; margin-top: 2pt; }
+  #print-area .pq { break-inside: avoid; page-break-inside: avoid; border: 1px solid #ccc; border-radius: 6pt; padding: 8pt 10pt; margin-bottom: 9pt; }
+  #print-area .pq-h { display: flex; gap: 6pt; align-items: baseline; flex-wrap: wrap; margin-bottom: 3pt; }
+  #print-area .pq-cat { font-size: 9pt; border: 1px solid #0e4a5a; color: #0e4a5a; border-radius: 99pt; padding: 0 6pt; }
+  #print-area .pq-meta { margin-left: auto; font-size: 8.5pt; color: #555; }
+  #print-area .pq-stem { font-weight: 700; margin-bottom: 3pt; }
+  #print-area .pq-opts { list-style: none; padding: 0; margin: 0 0 4pt; }
+  #print-area .pq-opts li { padding: 1pt 4pt; border-radius: 3pt; }
+  #print-area .pq-opts li.pc { background: #e5f4ec; font-weight: 700; }
+  #print-area .pq-opts li.pw { background: #fce9e7; text-decoration: line-through; text-decoration-color: #c5221f; }
+  #print-area .pq-opts em { font-style: normal; font-size: 8.5pt; margin-left: 6pt; }
+  #print-area .pq-ans { font-size: 9.5pt; font-weight: 700; margin-bottom: 3pt; }
+  #print-area .pq-expl { background: #f4f7f8; border-radius: 4pt; padding: 5pt 7pt; margin-bottom: 3pt; }
+  #print-area .pq-ref { font-size: 8.5pt; color: #333; margin-bottom: 3pt; }
+  #print-area .pq-note .pq-lines { height: 42pt; background: repeating-linear-gradient(transparent 0 13pt, #bbb 13pt 14pt); }
+  #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

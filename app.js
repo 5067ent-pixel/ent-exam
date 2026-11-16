@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.11.3";
+const APP_VERSION = "1.12.0";
 const CHANGELOG = [
+  { v: "1.12.0", date: "2026-11-16", notes: [
+    "錯題本可匯出 PDF：依目前選的科目與排序，列出題目、你上次的答案與正解、完整詳解、參考資料與本題依據，每題留有筆記欄方便更正"
+  ]},
   { v: "1.11.3", date: "2026-11-16", notes: [
     "「📍 本題依據」只寫書上的冊別與頁碼，不再顯示 PDF 頁數"
   ]},
@@ -535,10 +538,10 @@ const stripPdf = (l) => l
   .replace(/\s+([・，、；])/g, "$1").replace(/\s{2,}/g, " ")
   .trim();
 const pageOf = (a, b, c, d) => { const x = a || c, y = b || d; return y ? `${x}–${y}` : x; };
-function locHTML(q) {
+function locInfo(q) {
   const loc = (q.loc || []).map((l) => stripPdf(String(l))).filter(Boolean);
   const c = chapOf(q);
-  if (!loc.length) return "";
+  if (!loc.length) return null;
   const vol = c ? `Vol ${c.vol}` : "";
   // 第一個出現的書上頁碼，放在最上面：「Vol 2 第 1206 頁」
   let page = "";
@@ -548,8 +551,13 @@ function locHTML(q) {
   }
   const head = c ? `Scott-Brown ${vol}${page ? ` 第 ${page} 頁` : `・Ch ${c.num}${c.suf}`}` : "";
   // 每一行裡的書上頁碼也改寫成「Vol X 第 n 頁」
-  const lines = loc.map((l) => esc(vol ? l.replace(BOOK_PAGE_RE, (_, a, b, c, d) => `${vol} 第 ${pageOf(a, b, c, d)} 頁`) : l));
-  return `<div class="loc"><b>📍 本題依據</b>${head ? `<div class="loc-page">${esc(head)}</div>` : ""}<ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></div>`;
+  const lines = loc.map((l) => (vol ? l.replace(BOOK_PAGE_RE, (_, a, b, c, d) => `${vol} 第 ${pageOf(a, b, c, d)} 頁`) : l));
+  return { head, lines };
+}
+function locHTML(q) {
+  const L = locInfo(q);
+  if (!L) return "";
+  return `<div class="loc"><b>📍 本題依據</b>${L.head ? `<div class="loc-page">${esc(L.head)}</div>` : ""}<ul>${L.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></div>`;
 }
 function refHTML(q) {
   const refs = refList(q);
@@ -1045,13 +1053,17 @@ $("tile-exam").onclick = () => {
 };
 
 /* ---------- 錯題本 ---------- */
+function wrongBookList() {
+  const list = wrongPool($("wb-cat").value || "all");
+  if ($("wb-sort").value === "most") list.sort((a, b) => (S.progress[b.id].w - S.progress[a.id].w) || (S.progress[b.id].t - S.progress[a.id].t));
+  else list.sort((a, b) => S.progress[b.id].t - S.progress[a.id].t);
+  return list;
+}
 function renderWrongBook() {
   const sel = $("wb-cat");
   if (!sel.options.length) sel.innerHTML = catOptionsHTML(true);
-  const cat = sel.value || "all";
-  const list = wrongPool(cat);
-  if ($("wb-sort").value === "most") list.sort((a, b) => (S.progress[b.id].w - S.progress[a.id].w) || (S.progress[b.id].t - S.progress[a.id].t));
-  else list.sort((a, b) => S.progress[b.id].t - S.progress[a.id].t);
+  const list = wrongBookList();
+  $("wb-pdf").disabled = !list.length;
   $("wb-count").textContent = `共 ${list.length} 題`;
   $("wb-review").disabled = !list.length;
   $("wb-list").innerHTML = list.map((q) => {
@@ -1816,6 +1828,44 @@ $("ed-save").onclick = async () => {
     renderQList(); renderSnapshots(); toast("已儲存");
   } catch (e) { $("ed-err").textContent = "儲存失敗：" + errMsg(e); }
 };
+
+/* ---------- 錯題本匯出 PDF（列印成 PDF，詳解全部展開） ---------- */
+function exportWrongPDF() {
+  const list = wrongBookList();
+  if (!list.length) { toast("目前沒有錯題"); return; }
+  const cat = $("wb-cat").value || "all";
+  const d = new Date();
+  const date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  const items = list.map((q, i) => {
+    const p = S.progress[q.id];
+    const opts = q.options.map((o, k) => {
+      const mark = k === q.answer ? "✓ 正解" : k === p.sel ? "✗ 你的答案" : "";
+      return `<li class="${k === q.answer ? "pc" : k === p.sel ? "pw" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${mark ? `<em>${mark}</em>` : ""}</li>`;
+    }).join("");
+    const L = locInfo(q);
+    const refs = refList(q);
+    return `<article class="pq">
+      <div class="pq-h"><b>${i + 1}.</b> <span class="pq-cat">${esc(CATS[q.category] || q.category)}</span>
+        <span class="pq-meta">答錯 ${p.w} 次／作答 ${p.n} 次・${esc(q.id)}</span></div>
+      <div class="pq-stem">${fmt(q.stem)}</div>
+      <ol class="pq-opts">${opts}</ol>
+      <div class="pq-ans">正解：${LETTERS[q.answer]}　你上次選：${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}</div>
+      <div class="pq-expl"><b>詳解</b><div>${fmt(q.explanation || "（尚無詳解）")}</div></div>
+      ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc([L.head, ...L.lines].filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
+      <div class="pq-note"><b>我的筆記／更正</b><div class="pq-lines"></div></div>
+    </article>`;
+  }).join("");
+  const area = $("print-area");
+  area.innerHTML = `<header class="ph"><h1>ENT 專科練習　錯題本</h1>
+    <div>${cat === "all" ? "全部範圍" : esc(CATS[cat] || cat)}・共 ${list.length} 題・${date}・${esc(S.user?.email || "")}</div>
+    <div class="ph-tip">排序：${$("wb-sort").value === "most" ? "答錯次數多的在前" : "最近答錯的在前"}。正解標 ✓，你上次的答案標 ✗；每題下方留有筆記欄可以手寫更正。</div></header>${items}`;
+  document.body.classList.add("printing");
+  const done = () => { document.body.classList.remove("printing"); area.innerHTML = ""; window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  toast("在列印畫面選「儲存為 PDF」（iPhone：分享 → 列印 → 再按分享存成 PDF）", 6000);
+  setTimeout(() => window.print(), 300);
+}
+$("wb-pdf").onclick = exportWrongPDF;
 
 /* ---------- 彈出視窗右上角 ✕ ---------- */
 // 每個 <dialog> 右上角加關閉鈕；原本下方的關閉／取消按鈕保留

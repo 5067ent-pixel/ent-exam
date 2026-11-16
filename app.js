@@ -52,8 +52,13 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 const CHANGELOG = [
+  { v: "1.14.0", date: "2026-11-16", notes: [
+    "新增使用手冊：第一次登入會自動跳出，一頁一頁介紹各項功能；最後一頁可勾選「不再自動顯示」",
+    "之後可隨時按頂部選單的「說明」重新閱讀使用手冊",
+    "登入頁與頁尾加上聲明：此網頁僅提供耳鼻喉科住院醫師學習使用，無任何營利用途"
+  ]},
   { v: "1.13.0", date: "2026-11-16", notes: [
     "錯題本 PDF 的「我的筆記／更正」可按「✏️ 打字輸入」直接打字，會自動儲存在你的帳號，之後再匯出也會印出來"
   ]},
@@ -405,6 +410,7 @@ async function handleUser(u) {
     $("nav-admin").hidden = !S.admin;
     $("btn-changelog").hidden = !S.admin;
     renderHome(); renderFooter(); show("home");
+    if (!S.prefs.guideDone) setTimeout(() => openGuide(), 400);
   } catch (e) {
     console.error(e);
     $("auth-err").textContent = "載入失敗：" + errMsg(e);
@@ -1936,3 +1942,68 @@ document.querySelectorAll("dialog").forEach((dlg) => {
 });
 // 變更密碼視窗不論用哪種方式關閉，都清空密碼欄
 $("dlg-account").addEventListener("close", resetPwForm);
+
+/* ---------- 使用手冊（逐頁引導） ---------- */
+const ic = (d) => `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const GUIDE = [
+  { icon: ic('<path d="M6 8.5a6 6 0 1 1 12 0c0 3.5-3 4.5-3 7.5a3 3 0 0 1-6 0"/><path d="M10 9a2 2 0 1 1 4 0"/>'), title: "歡迎使用 ENT 專科練習",
+    body: `<p>這裡收錄依 <b>Scott-Brown 8th ed.</b> 逐章出題的練習題，幫你準備耳鼻喉科專科醫師考試。</p>
+      <p>接下來幾頁會帶你看一遍主要功能，大約 1 分鐘。</p>
+      <p class="disclaimer">⚠ 此網頁僅提供耳鼻喉科住院醫師學習使用，無任何營利用途。</p>` },
+  { icon: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'), title: "首頁：看進度、繼續練習",
+    body: `<ul><li>上方主卡顯示<b>完成進度</b>、答對率、待複習錯題和<b>連續練習天數</b>。</li>
+      <li>按<b>「繼續練習 20 題」</b>，會從全部科目優先出你還沒做過的題目。</li>
+      <li>「各科答對率」低於 60% 會標橘色並提示弱科，點一科就能只練那科。</li></ul>` },
+  { icon: ic('<path d="M4 6h16M4 12h10M4 18h7"/>'), title: "三種練習方式",
+    body: `<ul><li><b>依章節練習</b>：勾選讀過的 Scott-Brown 章節，讀到哪練到哪；也能用「從…到…」一次選一段。</li>
+      <li><b>自訂練習</b>：選科目、只出沒做過的或錯題、題數，練習或模擬考都可以。</li>
+      <li><b>模擬考</b>：每題 1 分鐘限時，交卷後才看答案。</li></ul>` },
+  { icon: ic('<path d="M5 12.5l4.5 4.5L19 7.5"/>'), title: "作答與詳解",
+    body: `<ul><li>點選答案後按<b>「送出答案」</b>，立刻看到對錯。</li>
+      <li>詳解下方有<b>參考資料</b>和<b>「📍 本題依據」</b>，標出在 Scott-Brown 第幾冊第幾頁，方便回書查。</li>
+      <li>題目上方的<b>「詳解」開關</b>：關掉時只顯示對錯，需要再點開。</li></ul>` },
+  { icon: ic('<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'), title: "星號與群組",
+    body: `<ul><li>做題時按 <b>☆</b> 收藏題目，按<b>「分類」</b>放進自己建立的群組（例如「NPC 必考」「待問主治」）。</li>
+      <li>頂部「★ 星號」可以依群組瀏覽、改名、刪除，並只練某個群組。</li></ul>` },
+  { icon: ic('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'), title: "錯題本與 PDF",
+    body: `<ul><li>答錯的題目會自動進<b>錯題本</b>；之後再答對就自動移出，也可以手動移出。</li>
+      <li>按<b>「匯出 PDF」</b>：列出題目、你的答案、正解和完整詳解。</li>
+      <li>每題的「我的筆記／更正」可以按<b>「✏️ 打字輸入」</b>，筆記會存在你的帳號，再次匯出也會印出來。</li></ul>` },
+  { icon: ic('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'), title: "帳號與網站更新",
+    body: `<ul><li>頂部<b>「帳號」</b>可以變更密碼。</li>
+      <li>網站有新版本時，頂部會出現<b>「立即更新」</b>；也可以按網頁最下方的<b>「重新整理」</b>載入最新版。</li>
+      <li>作答紀錄存在雲端，換手機或電腦登入都還在。</li></ul>` },
+  { icon: ic('<path d="M9 18l6-6-6-6"/>'), title: "準備好了！",
+    body: `<p>之後想再看這份使用手冊，按頂部選單的<b>「說明」</b>就能隨時打開。</p>
+      <p>祝 考試順利！</p>` }
+];
+let guideI = 0;
+function renderGuide() {
+  const g = GUIDE[guideI], last = guideI === GUIDE.length - 1;
+  $("guide-body").innerHTML = `<div class="guide-ic">${g.icon}</div><h2 id="guide-title">${g.title}</h2><div class="guide-text">${g.body}</div>`;
+  $("guide-dots").innerHTML = GUIDE.map((_, i) => `<span class="${i === guideI ? "on" : ""}"></span>`).join("");
+  $("guide-pos").textContent = `${guideI + 1} / ${GUIDE.length}`;
+  $("guide-prev").disabled = guideI === 0;
+  $("guide-next").textContent = last ? "開始使用" : "下一頁";
+  $("guide-never-wrap").hidden = !last;
+}
+function openGuide() {
+  guideI = 0;
+  $("guide-never").checked = !!S.prefs.guideDone;
+  renderGuide();
+  if (!$("dlg-guide").open) $("dlg-guide").showModal();
+  $("guide-next").focus();
+}
+$("guide-prev").onclick = () => { if (guideI > 0) { guideI--; renderGuide(); } };
+$("guide-next").onclick = () => {
+  if (guideI < GUIDE.length - 1) { guideI++; renderGuide(); return; }
+  const never = $("guide-never").checked;
+  if (never !== !!S.prefs.guideDone) {
+    S.prefs.guideDone = never;
+    try { localStorage.setItem(PREF_KEY, JSON.stringify(S.prefs)); } catch {}
+    saveUser(new FieldPath("prefs", "guideDone"), never);
+  }
+  $("dlg-guide").close();
+  if (never) toast("之後可按頂部「說明」再看使用手冊", 4000);
+};
+$("btn-guide").onclick = openGuide;

@@ -396,3 +396,18 @@ body.printing #print-area { display: block; max-width: 820px; margin: 0 auto; pa
   #print-area .pq-note:not(.has) .pq-blank { display: block !important; }
   #print-area .pq-note-text { border-left: 3px solid #0e4a5a; padding-left: 6pt; }
 }
+
+/* 使用手冊 */
+#dlg-guide { width: min(480px, 94vw); }
+.guide-dots { display: flex; gap: 6px; justify-content: center; margin: 2px 40px 12px; }
+.guide-dots span { width: 8px; height: 8px; border-radius: 4px; background: var(--line); transition: width .2s, background .2s; }
+.guide-dots span.on { width: 22px; background: var(--primary); }
+.guide-ic { width: 56px; height: 56px; border-radius: 16px; background: var(--sel); color: var(--primary); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+#guide-body h2 { margin: 0 0 8px; }
+.guide-text { min-height: 150px; font-size: .95rem; }
+.guide-text ul { padding-left: 20px; margin: 0; }
+.guide-text li { margin: 6px 0; }
+.guide-text p { margin: 6px 0; }
+.guide-never { margin: 10px 0 0; padding: 10px 12px; background: var(--bg); border-radius: 12px; }
+.disclaimer { color: #7a4a00; background: #fff4d6; border-radius: 10px; padding: 8px 10px; font-size: .85rem; }
+.disclaimer-foot { flex-basis: 100%; text-align: center; }

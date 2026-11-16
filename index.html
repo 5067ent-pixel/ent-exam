@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.13.0">
+<link rel="stylesheet" href="style.css?v=1.14.0">
 </head>
 <body>
 <header class="topbar">
@@ -15,6 +15,7 @@
     <button class="link" data-go="home">首頁</button>
     <button class="link" data-go="starred">★ 星號</button>
     <button class="link" id="nav-admin" data-go="admin" hidden>管理</button>
+    <button class="link" id="btn-guide">說明</button>
     <button class="link" id="btn-account">帳號</button>
     <button class="link" id="btn-logout">登出</button>
   </nav>
@@ -47,6 +48,7 @@
         <button class="link" id="auth-reset" type="button">忘記密碼</button>
       </div>
       <p class="muted small">本網站採邀請制，請使用受邀的 Email 註冊。</p>
+      <p class="disclaimer small">⚠ 此網頁僅提供耳鼻喉科住院醫師學習使用，無任何營利用途。</p>
     </div>
   </section>
 
@@ -387,6 +389,7 @@
 </main>
 
 <footer class="footer">
+  <span class="disclaimer-foot">⚠ 此網頁僅提供耳鼻喉科住院醫師學習使用，無任何營利用途。</span>
   <span id="footer-text"></span>
   <button class="link small" id="btn-refresh">重新整理</button>
   <button class="link small" id="btn-changelog" hidden>版本資訊</button>
@@ -421,6 +424,18 @@
       <button type="submit" class="primary" id="pw-save">更新密碼</button>
     </div>
   </form>
+</dialog>
+
+<!-- 使用手冊（逐頁引導） -->
+<dialog id="dlg-guide" aria-labelledby="guide-title">
+  <div class="guide-dots" id="guide-dots" aria-hidden="true"></div>
+  <div id="guide-body"></div>
+  <label class="inline small guide-never" id="guide-never-wrap" hidden><input type="checkbox" id="guide-never"> 不再自動顯示使用手冊</label>
+  <div class="row between">
+    <button type="button" id="guide-prev">上一頁</button>
+    <span class="muted small" id="guide-pos"></span>
+    <button type="button" class="primary" id="guide-next">下一頁</button>
+  </div>
 </dialog>
 
 <dialog id="dlg-changelog">
@@ -475,6 +490,6 @@
 
 <div id="print-area"></div>
 
-<script type="module" src="app.js?v=1.13.0"></script>
+<script type="module" src="app.js?v=1.14.0"></script>
 </body>
 </html>

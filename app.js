@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.14.4";
+const APP_VERSION = "1.14.5";
 const CHANGELOG = [
+  { v: "1.14.5", date: "2026-11-16", notes: [
+    "錯題本 PDF 的列印分頁加上「✕ 關閉並返回」按鈕，手機也能一鍵關掉分頁回到錯題本"
+  ]},
   { v: "1.14.4", date: "2026-11-16", notes: [
     "錯題本 PDF 改在乾淨的新分頁列印（只含錯題內容），解決 Safari 按下列印後反應很慢的問題"
   ]},
@@ -1921,7 +1924,10 @@ const PRINT_CSS = `
 *{box-sizing:border-box}
 body{margin:0;padding:12px;font:10.5pt/1.55 "PingFang TC","Heiti TC","Microsoft JhengHei",sans-serif;color:#000;background:#fff}
 .bar{padding:10px 0;border-bottom:1px solid #ccc;margin-bottom:10px;font-size:14px}
-.bar button{font:inherit;font-weight:700;padding:10px 16px;border-radius:10px;border:0;background:#0e4a5a;color:#fff}
+.bar{position:sticky;top:0;background:#fff}
+.bar button{font:inherit;font-weight:700;padding:10px 16px;border-radius:10px;border:0;background:#0e4a5a;color:#fff;margin-right:6px}
+.bar button.x{background:#fff;color:#0e4a5a;border:1.5px solid #0e4a5a}
+#hint{margin-top:6px;font-size:13px;color:#555}
 .ph{border-bottom:2px solid #0e4a5a;padding-bottom:6pt;margin-bottom:10pt}
 .ph h1{font-size:16pt;margin:0 0 2pt;color:#0e4a5a}
 .ph-tip{font-size:9pt;color:#444}
@@ -1949,7 +1955,9 @@ function printWrongStandalone() {
   const d = new Date();
   const title = `ENT錯題本_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
   const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${PRINT_CSS}</style></head><body>
-    <div class="bar"><button onclick="window.print()">列印／存成 PDF</button>　存好後關閉這個分頁即可。</div>
+    <div class="bar"><button onclick="window.print()">列印／存成 PDF</button>
+      <button class="x" onclick="window.close();setTimeout(function(){if(window.opener&&!window.opener.closed){try{window.opener.focus()}catch(e){}}document.getElementById('hint').textContent='如果分頁沒有關閉，請用瀏覽器的分頁鍵關閉，或直接切回原本的分頁。'},300)">✕ 關閉並返回</button>
+      <div id="hint">存好 PDF 後，按「關閉並返回」回到錯題本。</div></div>
     ${area.querySelector(".ph").outerHTML}${$("p-items").innerHTML}</body></html>`;
   const w = window.open("", "_blank");
   if (!w) { window.print(); return; }   // 新分頁被擋下時，退回原本的列印方式

@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.14.1";
+const APP_VERSION = "1.14.2";
 const CHANGELOG = [
+  { v: "1.14.2", date: "2026-11-16", notes: [
+    "錯題本按「匯出 PDF」後立刻顯示預覽，題目分批載入；手機上捲動預覽也更順"
+  ]},
   { v: "1.14.1", date: "2026-11-16", notes: [
     "錯題本 PDF：不再自動叫出列印（避免 Safari 跳出確認視窗），按「列印／存成 PDF」才列印；預覽時改用系統字體，Safari 更快；Mac Safari 可用「檔案 → 輸出為 PDF」"
   ]},
@@ -1886,53 +1889,61 @@ document.addEventListener("input", (e) => {
 });
 
 /* ---------- 錯題本匯出 PDF（列印成 PDF，詳解全部展開） ---------- */
+function wrongItemHTML(q, i) {
+  const p = S.progress[q.id];
+  const opts = q.options.map((o, k) => {
+    const mark = k === q.answer ? "✓ 正解" : k === p.sel ? "✗ 你的答案" : "";
+    return `<li class="${k === q.answer ? "pc" : k === p.sel ? "pw" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${mark ? `<em>${mark}</em>` : ""}</li>`;
+  }).join("");
+  const L = locInfo(q);
+  const refs = refList(q);
+  return `<article class="pq">
+    <div class="pq-h"><b>${i + 1}.</b> <span class="pq-cat">${esc(CATS[q.category] || q.category)}</span>
+      <span class="pq-meta">答錯 ${p.w} 次／作答 ${p.n} 次・${esc(q.id)}</span></div>
+    <div class="pq-stem">${fmt(q.stem)}</div>
+    <ol class="pq-opts">${opts}</ol>
+    <div class="pq-ans">正解：${LETTERS[q.answer]}　你上次選：${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}</div>
+    <div class="pq-expl"><b>詳解</b><div>${fmt(q.explanation || "（尚無詳解）")}</div></div>
+    ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc((L.lines.some((l) => /Vol \d 第/.test(l)) ? L.lines : [L.head, ...L.lines]).filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
+    ${noteBlock(q.id)}
+  </article>`;
+}
+let printJob = 0;
 function exportWrongPDF() {
   const list = wrongBookList();
   if (!list.length) { toast("目前沒有錯題"); return; }
+  const job = ++printJob;
   const cat = $("wb-cat").value || "all";
   const d = new Date();
   const date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-  const items = list.map((q, i) => {
-    const p = S.progress[q.id];
-    const opts = q.options.map((o, k) => {
-      const mark = k === q.answer ? "✓ 正解" : k === p.sel ? "✗ 你的答案" : "";
-      return `<li class="${k === q.answer ? "pc" : k === p.sel ? "pw" : ""}"><b>${LETTERS[k]}.</b> ${fmt(o)}${mark ? `<em>${mark}</em>` : ""}</li>`;
-    }).join("");
-    const L = locInfo(q);
-    const refs = refList(q);
-    return `<article class="pq">
-      <div class="pq-h"><b>${i + 1}.</b> <span class="pq-cat">${esc(CATS[q.category] || q.category)}</span>
-        <span class="pq-meta">答錯 ${p.w} 次／作答 ${p.n} 次・${esc(q.id)}</span></div>
-      <div class="pq-stem">${fmt(q.stem)}</div>
-      <ol class="pq-opts">${opts}</ol>
-      <div class="pq-ans">正解：${LETTERS[q.answer]}　你上次選：${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}</div>
-      <div class="pq-expl"><b>詳解</b><div>${fmt(q.explanation || "（尚無詳解）")}</div></div>
-      ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc((L.lines.some((l) => /Vol \d 第/.test(l)) ? L.lines : [L.head, ...L.lines]).filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
-      ${noteBlock(q.id)}
-    </article>`;
-  }).join("");
   const area = $("print-area");
+  // 先立刻切到預覽頁並放上標題，題目再分批加進來：按下去馬上有反應，不必等全部排好
   area.innerHTML = `<div class="p-tools">
-      <button type="button" class="primary" id="p-print">列印／存成 PDF</button>
+      <button type="button" class="primary" id="p-print" disabled>準備中…</button>
       <button type="button" id="p-back">返回錯題本</button>
       <span class="small">Mac 的 Safari：用選單列「檔案 → 輸出為 PDF…」最快。其他電腦瀏覽器：按左邊按鈕，目的地選「另存為 PDF」。iPhone：按左邊按鈕後再按分享存成 PDF。</span>
     </div>
     <header class="ph"><h1>ENT 專科練習　錯題本</h1>
     <div>${cat === "all" ? "全部範圍" : esc(CATS[cat] || cat)}・共 ${list.length} 題・${date}・${esc(S.user?.email || "")}</div>
-    <div class="ph-tip">排序：${$("wb-sort").value === "most" ? "答錯次數多的在前" : "最近答錯的在前"}。正解標 ✓，你上次的答案標 ✗；每題下方留有筆記欄可以手寫更正。</div></header>${items}`;
-  // 先切到預覽畫面（列印鍵壞掉的瀏覽器也看得到內容，可再按「列印／存成 PDF」或 Ctrl+P）
+    <div class="ph-tip">排序：${$("wb-sort").value === "most" ? "答錯次數多的在前" : "最近答錯的在前"}。正解標 ✓，你上次的答案標 ✗；每題下方留有筆記欄可以手寫更正。</div></header>
+    <div id="p-items"></div>`;
   document.body.classList.add("printing");
   window.scrollTo(0, 0);
-  // 預覽期間停用網路字體（Google Fonts），列印／輸出 PDF 時不必嵌入大型中文字型，Safari 會快很多
-  const webFont = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
-  if (webFont) webFont.disabled = true;
   // 只在使用者按按鈕時才列印：自動叫出列印會讓 Safari 跳出「此網頁正在嘗試列印」確認視窗
   $("p-print").onclick = () => window.print();
-  $("p-back").onclick = () => {
-    document.body.classList.remove("printing"); area.innerHTML = "";
-    if (webFont) webFont.disabled = false;
+  $("p-back").onclick = () => { printJob++; document.body.classList.remove("printing"); area.innerHTML = ""; };
+  const box = $("p-items"), btn = $("p-print");
+  let n = 0;
+  const step = (size) => {
+    if (job !== printJob) return;   // 已經按返回
+    const end = Math.min(n + size, list.length);
+    let html = "";
+    for (; n < end; n++) html += wrongItemHTML(list[n], n);
+    box.insertAdjacentHTML("beforeend", html);
+    if (n < list.length) { btn.textContent = `準備中… ${n}/${list.length}`; setTimeout(() => step(40), 0); }
+    else { btn.disabled = false; btn.textContent = "列印／存成 PDF"; }
   };
-  toast("預覽好了，按上方「列印／存成 PDF」", 4000);
+  step(12);
 }
 $("wb-pdf").onclick = exportWrongPDF;
 

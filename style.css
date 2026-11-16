@@ -381,3 +381,18 @@ body.printing #print-area { display: block; max-width: 820px; margin: 0 auto; pa
   #print-area .p-tools { display: none !important; }
   body.printing #print-area { max-width: none; padding: 0; }
 }
+
+/* 我的筆記 */
+.pq-note-h { display: flex; align-items: center; gap: 8px; }
+.pq-edit { min-height: 36px; padding: 0 12px; font-size: .82rem; border-radius: 10px; color: var(--primary); background: #fff; border: 1px solid var(--primary); }
+.pq-ta { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--primary); border-radius: 10px; font: inherit; resize: vertical; min-height: 72px; }
+.pq-note-text { white-space: normal; margin-top: 4px; }
+.pq-note-text:empty { display: none; }
+.pq-note.editing .pq-note-text { display: none; }
+.pq-note.has .pq-blank, .pq-note.editing .pq-blank { display: none; }
+@media print {
+  #print-area .pq-edit, #print-area .pq-ta { display: none !important; }
+  #print-area .pq-note.editing .pq-note-text { display: block; }
+  #print-area .pq-note:not(.has) .pq-blank { display: block !important; }
+  #print-area .pq-note-text { border-left: 3px solid #0e4a5a; padding-left: 6pt; }
+}

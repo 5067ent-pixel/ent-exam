@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.12.2";
+const APP_VERSION = "1.13.0";
 const CHANGELOG = [
+  { v: "1.13.0", date: "2026-11-16", notes: [
+    "錯題本 PDF 的「我的筆記／更正」可按「✏️ 打字輸入」直接打字，會自動儲存在你的帳號，之後再匯出也會印出來"
+  ]},
   { v: "1.12.2", date: "2026-11-16", notes: [
     "錯題本 PDF 在 Safari 更快：改用系統內建字體、簡化筆記格線，Safari 先顯示預覽再由你按列印"
   ]},
@@ -157,7 +160,7 @@ const db = getFirestore(app);
 // stars: { [qid]: { t, g: [groupId] } }；groups: { [gid]: { name, t } }
 const S = {
   user: null, admin: false, bank: [], bankMeta: null, progress: {}, quiz: null, timer: null, registering: false,
-  stars: {}, groups: {}, prefs: { expl: true }
+  stars: {}, groups: {}, notes: {}, prefs: { expl: true }
 };
 
 /* ---------- 小工具 ---------- */
@@ -388,6 +391,7 @@ async function handleUser(u) {
     S.progress = d.progress || {};
     S.stars = d.starred || {};
     S.groups = d.groups || {};
+    S.notes = d.notes || {};
     S.prefs = { expl: true, ...readLocalPrefs(), ...(d.prefs || {}) };
     if (!CH.sel.size && d.prefs?.chap?.sel?.length) {
       const c = d.prefs.chap;
@@ -1835,6 +1839,43 @@ $("ed-save").onclick = async () => {
   } catch (e) { $("ed-err").textContent = "儲存失敗：" + errMsg(e); }
 };
 
+/* ---------- 我的筆記（每題一則，存在自己的帳號，錯題本 PDF 會印出來） ---------- */
+const noteText = (id) => S.notes?.[id]?.text || "";
+function noteBlock(id) {
+  const t = noteText(id);
+  return `<div class="pq-note ${t ? "has" : ""}" data-qid="${esc(id)}">
+    <div class="pq-note-h"><b>我的筆記／更正</b>
+      <button type="button" class="pq-edit" data-note="${esc(id)}">✏️ ${t ? "編輯筆記" : "打字輸入"}</button></div>
+    <div class="pq-note-text">${fmt(t)}</div>
+    <textarea class="pq-ta" rows="3" placeholder="在這裡打字，會自動儲存，印成 PDF 時也會印出來" hidden>${esc(t)}</textarea>
+    <div class="pq-blank"><div class="pq-line"></div><div class="pq-line"></div><div class="pq-line"></div></div>
+  </div>`;
+}
+function saveNote(id, text) {
+  text = text.trim();
+  if (text) S.notes[id] = { text, t: Date.now() }; else delete S.notes[id];
+  clearTimeout(saveNote._t[id]);
+  saveNote._t[id] = setTimeout(() => saveUser(new FieldPath("notes", id), text ? S.notes[id] : deleteField()), 800);
+}
+saveNote._t = {};
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".pq-edit");
+  if (!b) return;
+  const box = b.closest(".pq-note"), ta = box.querySelector(".pq-ta");
+  const open = ta.hidden;
+  ta.hidden = !open;
+  box.classList.toggle("editing", open);
+  b.textContent = open ? "✓ 完成" : `✏️ ${ta.value.trim() ? "編輯筆記" : "打字輸入"}`;
+  if (open) ta.focus();
+});
+document.addEventListener("input", (e) => {
+  if (!e.target.classList?.contains("pq-ta")) return;
+  const box = e.target.closest(".pq-note"), id = box.dataset.qid, v = e.target.value;
+  box.querySelector(".pq-note-text").innerHTML = fmt(v.trim());
+  box.classList.toggle("has", !!v.trim());
+  saveNote(id, v);
+});
+
 /* ---------- 錯題本匯出 PDF（列印成 PDF，詳解全部展開） ---------- */
 function exportWrongPDF() {
   const list = wrongBookList();
@@ -1858,7 +1899,7 @@ function exportWrongPDF() {
       <div class="pq-ans">正解：${LETTERS[q.answer]}　你上次選：${p.sel >= 0 ? LETTERS[p.sel] : "未作答"}</div>
       <div class="pq-expl"><b>詳解</b><div>${fmt(q.explanation || "（尚無詳解）")}</div></div>
       ${refs.length || L ? `<div class="pq-ref">${refs.length ? `<div>📖 ${refs.map(esc).join("；")}</div>` : ""}${L ? `<div>📍 本題依據：${esc((L.lines.some((l) => /Vol \d 第/.test(l)) ? L.lines : [L.head, ...L.lines]).filter(Boolean).join("；"))}</div>` : ""}</div>` : ""}
-      <div class="pq-note"><b>我的筆記／更正</b><div class="pq-line"></div><div class="pq-line"></div><div class="pq-line"></div></div>
+      ${noteBlock(q.id)}
     </article>`;
   }).join("");
   const area = $("print-area");

@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.11.1";
+const APP_VERSION = "1.11.2";
 const CHANGELOG = [
+  { v: "1.11.2", date: "2026-11-16", notes: [
+    "「📍 本題依據」最上面標出在 Scott-Brown 第幾冊、第幾頁（例如「Vol 2 第 1206 頁」），翻書更快"
+  ]},
   { v: "1.11.1", date: "2026-11-13", notes: [
     "所有彈出視窗右上角加上 ✕ 關閉鈕（原本下方的關閉／取消按鈕保留）"
   ]},
@@ -520,10 +523,24 @@ function chapterKey(q) {
   return m ? `Vol${m[1]}_Ch${m[2].padStart(3, "0")}${m[3].toLowerCase()}` : "";
 }
 // 本題依據的段落（頁碼、段落標題、KEY POINTS 第幾點），不含原文
+// 書上頁碼的寫法：p. 1206、pp. 1206–1207、書上第 1206 頁、第 1206 頁（前面是「PDF」的頁數不算）
+const BOOK_PAGE_RE = /(?<!PDF\s*)(?:\bp{1,2}\.\s*(\d{1,4})(?:\s*[–\-~]\s*(\d{1,4}))?(?:\s*頁)?|(?:書上\s*)?第\s*(\d{1,4})(?:\s*[–\-~]\s*(\d{1,4}))?\s*頁)/gi;
+const pageOf = (a, b, c, d) => { const x = a || c, y = b || d; return y ? `${x}–${y}` : x; };
 function locHTML(q) {
   const loc = (q.loc || []).filter(Boolean);
+  const c = chapOf(q);
   if (!loc.length) return "";
-  return `<div class="loc"><b>📍 本題依據</b><ul>${loc.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></div>`;
+  const vol = c ? `Vol ${c.vol}` : "";
+  // 第一個出現的書上頁碼，放在最上面：「Vol 2 第 1206 頁」
+  let page = "";
+  for (const l of loc) {
+    const m = new RegExp(BOOK_PAGE_RE.source, "i").exec(l);
+    if (m) { page = pageOf(m[1], m[2], m[3], m[4]); break; }
+  }
+  const head = c ? `Scott-Brown ${vol}${page ? ` 第 ${page} 頁` : `・Ch ${c.num}${c.suf}`}` : "";
+  // 每一行裡的書上頁碼也改寫成「Vol X 第 n 頁」
+  const lines = loc.map((l) => esc(vol ? l.replace(BOOK_PAGE_RE, (_, a, b, c, d) => `${vol} 第 ${pageOf(a, b, c, d)} 頁`) : l));
+  return `<div class="loc"><b>📍 本題依據</b>${head ? `<div class="loc-page">${esc(head)}</div>` : ""}<ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></div>`;
 }
 function refHTML(q) {
   const refs = refList(q);

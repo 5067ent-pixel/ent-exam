@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.14.3";
+const APP_VERSION = "1.14.4";
 const CHANGELOG = [
+  { v: "1.14.4", date: "2026-11-16", notes: [
+    "錯題本 PDF 改在乾淨的新分頁列印（只含錯題內容），解決 Safari 按下列印後反應很慢的問題"
+  ]},
   { v: "1.14.3", date: "2026-11-16", notes: [
     "錯題本 PDF 預覽頁顯示預覽產生時間與版本，方便回報速度問題"
   ]},
@@ -1911,6 +1914,48 @@ function wrongItemHTML(q, i) {
     ${noteBlock(q.id)}
   </article>`;
 }
+// 列印用的獨立頁面：只有錯題內容與最精簡的樣式（沒有網路字體、沒有網站其他畫面），
+// Safari 在完整網站頁面上列印很慢，改在乾淨的新分頁列印
+const PRINT_CSS = `
+@page{size:A4;margin:14mm 12mm}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;font:10.5pt/1.55 "PingFang TC","Heiti TC","Microsoft JhengHei",sans-serif;color:#000;background:#fff}
+.bar{padding:10px 0;border-bottom:1px solid #ccc;margin-bottom:10px;font-size:14px}
+.bar button{font:inherit;font-weight:700;padding:10px 16px;border-radius:10px;border:0;background:#0e4a5a;color:#fff}
+.ph{border-bottom:2px solid #0e4a5a;padding-bottom:6pt;margin-bottom:10pt}
+.ph h1{font-size:16pt;margin:0 0 2pt;color:#0e4a5a}
+.ph-tip{font-size:9pt;color:#444}
+.pq{break-inside:avoid;border:1px solid #ccc;border-radius:6pt;padding:8pt 10pt;margin-bottom:9pt}
+.pq-cat{font-size:9pt;border:1px solid #0e4a5a;color:#0e4a5a;border-radius:99pt;padding:0 6pt}
+.pq-meta{float:right;font-size:8.5pt;color:#555}
+.pq-stem{font-weight:700;margin:3pt 0}
+.pq-opts{list-style:none;padding:0;margin:0 0 4pt}
+.pq-opts li{padding:1pt 4pt}
+.pq-opts li.pc{background:#e5f4ec;font-weight:700}
+.pq-opts li.pw{background:#fce9e7;text-decoration:line-through}
+.pq-opts em{font-style:normal;font-size:8.5pt;margin-left:6pt}
+.pq-ans{font-size:9.5pt;font-weight:700;margin-bottom:3pt}
+.pq-expl{background:#f4f7f8;padding:5pt 7pt;margin-bottom:3pt}
+.pq-ref{font-size:8.5pt;color:#333;margin-bottom:3pt}
+.pq-edit,.pq-ta{display:none}
+.pq-note-text{border-left:3px solid #0e4a5a;padding-left:6pt;margin-top:3pt}
+.pq-note-text:empty{display:none}
+.pq-line{height:14pt;border-bottom:1px solid #bbb}
+.pq-note.has .pq-blank{display:none}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@media print{.bar{display:none}body{padding:0}}`;
+function printWrongStandalone() {
+  const area = $("print-area");
+  const d = new Date();
+  const title = `ENT錯題本_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${PRINT_CSS}</style></head><body>
+    <div class="bar"><button onclick="window.print()">列印／存成 PDF</button>　存好後關閉這個分頁即可。</div>
+    ${area.querySelector(".ph").outerHTML}${$("p-items").innerHTML}</body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) { window.print(); return; }   // 新分頁被擋下時，退回原本的列印方式
+  w.document.open(); w.document.write(html); w.document.close();
+  w.focus();
+}
 let printJob = 0;
 function exportWrongPDF() {
   const list = wrongBookList();
@@ -1935,7 +1980,7 @@ function exportWrongPDF() {
   document.body.classList.add("printing");
   window.scrollTo(0, 0);
   // 只在使用者按按鈕時才列印：自動叫出列印會讓 Safari 跳出「此網頁正在嘗試列印」確認視窗
-  $("p-print").onclick = () => window.print();
+  $("p-print").onclick = printWrongStandalone;
   $("p-back").onclick = () => { printJob++; document.body.classList.remove("printing"); area.innerHTML = ""; };
   const box = $("p-items"), btn = $("p-print");
   let n = 0;

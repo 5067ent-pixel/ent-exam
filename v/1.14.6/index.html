@@ -6,7 +6,7 @@
 <title>ENT 專科考試練習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1.15.0">
+<link rel="stylesheet" href="style.css?v=1.14.6">
 </head>
 <body>
 <header class="topbar">
@@ -301,6 +301,18 @@
 
   <!-- 管理 -->
   <section id="view-admin" class="view" hidden>
+    <div class="card" id="release-card">
+      <h2>版本預覽與發布</h2>
+      <p class="small" id="rel-status"></p>
+      <div class="row">
+        <label class="inline small">版本<select id="rel-ver"></select></label>
+        <button id="rel-preview">預覽這個版本</button>
+        <button class="primary" id="rel-publish">發布為正式版</button>
+        <button class="link" id="rel-exit" hidden>結束預覽，回正式版</button>
+      </div>
+      <p class="muted small">預覽只有你自己看得到。按「發布為正式版」後，會員才會收到更新；選較舊的版本再發布，就能退回上一版。</p>
+    </div>
+
     <div class="card" id="notify-card">
       <h2>版本更新通知</h2>
       <label class="inline small">通知內容從<select id="nt-from"></select>到最新版</label>
@@ -490,6 +502,6 @@
 
 <div id="print-area"></div>
 
-<script type="module" src="app.js?v=1.15.0"></script>
+<script type="module" src="app.js?v=1.14.6"></script>
 </body>
 </html>

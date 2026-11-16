@@ -8,7 +8,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection,
   query, orderBy, limit, writeBatch, serverTimestamp, FieldPath, deleteField
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig } from "./firebase-config.js";
+import { firebaseConfig } from "../../firebase-config.js";
 
 /* ---------- 常數 ---------- */
 // 依專科醫師甄審原則公告之筆試範圍
@@ -52,10 +52,10 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.14.6";
 const CHANGELOG = [
-  { v: "1.15.0", date: "2026-11-16", notes: [
-    "使用手冊新增「加到手機主畫面」教學（iPhone 與 Android），可按頂部「說明」查看"
+  { v: "1.14.6", date: "2026-11-16", notes: [
+    "管理者：新增「版本預覽與發布」，可在管理頁預覽新版本，確認後再發布給會員，也能退回舊版"
   ]},
   { v: "1.14.5", date: "2026-11-16", notes: [
     "錯題本 PDF 的列印分頁加上「✕ 關閉並返回」按鈕，手機也能一鍵關掉分頁回到錯題本"
@@ -178,6 +178,17 @@ const CHANGELOG = [
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// 每個版本放在 v/<版本>/ 資料夾；正式版本記在 Firestore meta/release，管理者在管理頁發布
+const ROOT = new URL("../../", location.href).href;
+const REL_KEY = "ent-release";
+const IS_PREVIEW = (() => {
+  try {
+    if (new URLSearchParams(location.search).has("preview")) sessionStorage.setItem("ent-preview", "1");
+    return sessionStorage.getItem("ent-preview") === "1";
+  } catch { return false; }
+})();
+let releaseV = null;
 
 /* ---------- 狀態 ---------- */
 // stars: { [qid]: { t, g: [groupId] } }；groups: { [gid]: { name, t } }
@@ -428,6 +439,7 @@ async function handleUser(u) {
     $("nav-admin").hidden = !S.admin;
     $("btn-changelog").hidden = !S.admin;
     renderHome(); renderFooter(); show("home");
+    checkUpdate();
     if (!S.prefs.guideDone) setTimeout(() => openGuide(), 400);
   } catch (e) {
     console.error(e);
@@ -487,7 +499,7 @@ function fmtTime(ms) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 function renderFooter() {
-  let t = `網站版本 v${APP_VERSION}${location.pathname.includes("/preview/") ? "（預覽版，尚未發布）" : ""}`;
+  let t = `網站版本 v${APP_VERSION}${IS_PREVIEW ? "（預覽中，尚未發布）" : ""}`;
   if (S.user && S.bankMeta?.version) t += `　·　題庫更新於 ${fmtTime(S.bankMeta.version)}（${S.bank.length} 題）`;
   $("footer-text").textContent = t;
 }
@@ -504,24 +516,26 @@ renderFooter();
 /* ---------- 新版本檢查（避免手機瀏覽器一直用舊快取） ---------- */
 const verNum = (v) => String(v).split(".").map((x) => +x || 0).reduce((a, x) => a * 1000 + x, 0);
 async function checkUpdate() {
+  if (!S.user || !S.user.emailVerified) return;
   try {
-    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
-    if (!r.ok) return;
-    const { v } = await r.json();
-    if (v && verNum(v) > verNum(APP_VERSION)) $("update-bar").hidden = false;
+    const m = await getDoc(doc(db, "meta", "release"));
+    releaseV = m.exists() ? m.data().v : null;
+    if (!releaseV || IS_PREVIEW) return;
+    try { localStorage.setItem(REL_KEY, releaseV); } catch {}
+    $("update-bar").hidden = releaseV === APP_VERSION;
   } catch {}
 }
-// 強制重新載入：網址加上時間參數，讓瀏覽器重新抓 index.html（手機或加到主畫面時沒有重新整理鍵也能用）
+// 強制重新載入：回到網站入口，由入口帶到目前的正式版本（預覽中則留在預覽版）
 function hardReload() {
   if (S.quiz && !S.quiz.done && !confirm("重新整理會放棄這次作答，確定嗎？")) return;
-  location.replace(location.pathname + "?r=" + Date.now());
+  location.replace(IS_PREVIEW ? location.pathname + "?preview=1&r=" + Date.now() : ROOT + "?r=" + Date.now());
 }
 $("update-go").onclick = hardReload;
 $("btn-refresh").onclick = hardReload;
 // 網址上的 ?r= 只用來跳過快取，載入後清掉
 if (/[?&]r=\d+/.test(location.search)) history.replaceState(null, "", location.pathname);
-checkUpdate();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
+if (IS_PREVIEW) document.body.classList.add("is-preview");
 
 /* ---------- 導覽 ---------- */
 function go(name) {
@@ -1344,8 +1358,33 @@ function finishQuiz() {
 function renderAdmin() {
   $("adm-count").textContent = S.bank.length;
   if (!$("adm-cat").options.length) $("adm-cat").innerHTML = catOptionsHTML(true);
-  renderInvites(); renderNotify(); renderUserStats(); renderQList(); renderSnapshots(); show("admin");
+  renderInvites(); renderRelease(); renderNotify(); renderUserStats(); renderQList(); renderSnapshots(); show("admin");
 }
+
+/* ---------- 管理：版本預覽與發布 ---------- */
+async function renderRelease() {
+  await checkUpdate();
+  let list = [];
+  try { list = (await (await fetch(ROOT + "versions.json?t=" + Date.now(), { cache: "no-store" })).json()).list || []; } catch {}
+  if (!list.includes(APP_VERSION)) list.unshift(APP_VERSION);
+  $("rel-status").innerHTML = `會員目前使用的正式版：<b>${releaseV ? "v" + esc(releaseV) : "尚未設定"}</b>　・　你現在看的：<b>v${APP_VERSION}</b>${IS_PREVIEW ? "（預覽）" : ""}` +
+    (list[0] && list[0] !== releaseV ? `<br>有新版本 <b>v${esc(list[0])}</b> 還沒發布。` : `<br>目前沒有待發布的新版本。`);
+  $("rel-ver").innerHTML = list.map((v) => `<option value="${esc(v)}">v${esc(v)}${v === releaseV ? "（正式版）" : ""}</option>`).join("");
+  $("rel-exit").hidden = !IS_PREVIEW;
+}
+$("rel-preview").onclick = () => { location.href = `${ROOT}v/${$("rel-ver").value}/?preview=1`; };
+$("rel-exit").onclick = () => { try { sessionStorage.removeItem("ent-preview"); } catch {} location.replace(ROOT + "?r=" + Date.now()); };
+$("rel-publish").onclick = async () => {
+  const v = $("rel-ver").value;
+  if (!/^\d+\.\d+\.\d+$/.test(v)) return;
+  if (v === releaseV) { toast("這個版本已經是正式版"); return; }
+  if (!confirm(`把 v${v} 發布為正式版？\n所有會員下次打開網站時會看到「立即更新」。${releaseV && verNum(v) < verNum(releaseV) ? "\n（這是退回較舊的版本）" : ""}`)) return;
+  try {
+    await setDoc(doc(db, "meta", "release"), { v, at: serverTimestamp(), by: S.user.email });
+    try { localStorage.setItem(REL_KEY, v); } catch {}
+    toast(`已發布 v${v}`, 4000); renderRelease();
+  } catch (e) { toast("發布失敗：" + errMsg(e)); }
+};
 
 /* ---------- 管理：版本更新通知信 ---------- */
 // 以「管理者：」或「管理員：」開頭的更新只給管理者看，不寫進會員通知信
@@ -1359,7 +1398,7 @@ function pendingReleases() {
 }
 function notifyMail() {
   const rel = pendingReleases();
-  const url = location.origin + location.pathname;
+  const url = ROOT;
   const subject = `ENT 專科練習網站更新（v${rel[0]?.v || APP_VERSION}）`;
   const body = ["各位好，", "", "ENT 專科練習網站有新功能：", "",
     ...rel.flatMap((c) => [`【v${c.v}・${c.date}】`, ...c.notes.map((n) => `・${n}`), ""]),
@@ -1582,7 +1621,7 @@ $("inv-list").onclick = async (e) => {
   catch (err) { toast("失敗：" + errMsg(err)); }
 };
 $("inv-copy").onclick = async () => {
-  const url = location.origin + location.pathname;
+  const url = ROOT;
   const text = `你已受邀使用 ENT 專科考試練習網站：\n${url}\n\n請點「受邀新用戶？註冊帳號」，用收到這則訊息的 Email 註冊，並到信箱完成 Email 驗證後即可登入。`;
   try { await navigator.clipboard.writeText(text); toast("已複製邀請訊息"); }
   catch { prompt("請手動複製：", text); }
@@ -2058,17 +2097,6 @@ const GUIDE = [
     body: `<ul><li>頂部<b>「帳號」</b>可以變更密碼。</li>
       <li>網站有新版本時，頂部會出現<b>「立即更新」</b>；也可以按網頁最下方的<b>「重新整理」</b>載入最新版。</li>
       <li>作答紀錄存在雲端，換手機或電腦登入都還在。</li></ul>` },
-  { icon: ic('<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 8v6M9 11h6"/>'), title: "加到手機主畫面",
-    body: `<p>把網站加到主畫面，之後像 App 一樣點圖示就能打開。</p>
-      <p><b>iPhone（用 Safari 打開網站）</b></p>
-      <ol><li>按畫面下方的<b>分享鍵</b>（方框加向上箭頭）。</li>
-      <li>往下滑，選<b>「加入主畫面」</b>。</li>
-      <li>按右上角<b>「加入」</b>。</li></ol>
-      <p><b>Android（用 Chrome 打開網站）</b></p>
-      <ol><li>按右上角的<b>「⋮」</b>選單。</li>
-      <li>選<b>「加到主畫面」</b>（有些手機寫「安裝應用程式」）。</li>
-      <li>按<b>「新增」</b>。</li></ol>
-      <p class="muted small">從主畫面打開時沒有瀏覽器的重新整理鍵，要更新請按網頁最下方的「重新整理」。</p>` },
   { icon: ic('<path d="M9 18l6-6-6-6"/>'), title: "準備好了！",
     body: `<p>之後想再看這份使用手冊，按頂部選單的<b>「說明」</b>就能隨時打開。</p>
       <p>祝 考試順利！</p>` }

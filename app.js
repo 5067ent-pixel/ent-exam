@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.14.2";
+const APP_VERSION = "1.14.3";
 const CHANGELOG = [
+  { v: "1.14.3", date: "2026-11-16", notes: [
+    "錯題本 PDF 預覽頁顯示預覽產生時間與版本，方便回報速度問題"
+  ]},
   { v: "1.14.2", date: "2026-11-16", notes: [
     "錯題本按「匯出 PDF」後立刻顯示預覽，題目分批載入；手機上捲動預覽也更順"
   ]},
@@ -1913,6 +1916,7 @@ function exportWrongPDF() {
   const list = wrongBookList();
   if (!list.length) { toast("目前沒有錯題"); return; }
   const job = ++printJob;
+  const t0 = performance.now();
   const cat = $("wb-cat").value || "all";
   const d = new Date();
   const date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
@@ -1921,6 +1925,7 @@ function exportWrongPDF() {
   area.innerHTML = `<div class="p-tools">
       <button type="button" class="primary" id="p-print" disabled>準備中…</button>
       <button type="button" id="p-back">返回錯題本</button>
+      <span class="small" id="p-time"></span>
       <span class="small">Mac 的 Safari：用選單列「檔案 → 輸出為 PDF…」最快。其他電腦瀏覽器：按左邊按鈕，目的地選「另存為 PDF」。iPhone：按左邊按鈕後再按分享存成 PDF。</span>
     </div>
     <header class="ph"><h1>ENT 專科練習　錯題本</h1>
@@ -1941,7 +1946,13 @@ function exportWrongPDF() {
     for (; n < end; n++) html += wrongItemHTML(list[n], n);
     box.insertAdjacentHTML("beforeend", html);
     if (n < list.length) { btn.textContent = `準備中… ${n}/${list.length}`; setTimeout(() => step(40), 0); }
-    else { btn.disabled = false; btn.textContent = "列印／存成 PDF"; }
+    else {
+      btn.disabled = false; btn.textContent = "列印／存成 PDF";
+      // 畫面真的畫出來之後，顯示花了多久（方便回報哪一段慢）
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (job === printJob && $("p-time")) $("p-time").textContent = `預覽產生 ${((performance.now() - t0) / 1000).toFixed(2)} 秒・v${APP_VERSION}`;
+      }));
+    }
   };
   step(12);
 }

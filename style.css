@@ -411,3 +411,6 @@ body.printing #print-area { display: block; max-width: 820px; margin: 0 auto; pa
 .guide-never { margin: 10px 0 0; padding: 10px 12px; background: var(--bg); border-radius: 12px; }
 .disclaimer { color: #7a4a00; background: #fff4d6; border-radius: 10px; padding: 8px 10px; font-size: .85rem; }
 .disclaimer-foot { flex-basis: 100%; text-align: center; }
+
+/* 列印／PDF 預覽期間整頁改用系統字體 */
+body.printing, body.printing #print-area { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", system-ui, sans-serif; }

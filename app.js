@@ -52,8 +52,11 @@ const SB_VOL = {
 };
 
 /* ---------- 網站版本（每次更新程式請改這裡） ---------- */
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.14.1";
 const CHANGELOG = [
+  { v: "1.14.1", date: "2026-11-16", notes: [
+    "錯題本 PDF：不再自動叫出列印（避免 Safari 跳出確認視窗），按「列印／存成 PDF」才列印；預覽時改用系統字體，Safari 更快；Mac Safari 可用「檔案 → 輸出為 PDF」"
+  ]},
   { v: "1.14.0", date: "2026-11-16", notes: [
     "新增使用手冊：第一次登入會自動跳出，一頁一頁介紹各項功能；最後一頁可勾選「不再自動顯示」",
     "之後可隨時按頂部選單的「說明」重新閱讀使用手冊",
@@ -1912,7 +1915,7 @@ function exportWrongPDF() {
   area.innerHTML = `<div class="p-tools">
       <button type="button" class="primary" id="p-print">列印／存成 PDF</button>
       <button type="button" id="p-back">返回錯題本</button>
-      <span class="small">電腦：目的地選「另存為 PDF」。iPhone：按分享 → 列印，再按分享存成 PDF。</span>
+      <span class="small">Mac 的 Safari：用選單列「檔案 → 輸出為 PDF…」最快。其他電腦瀏覽器：按左邊按鈕，目的地選「另存為 PDF」。iPhone：按左邊按鈕後再按分享存成 PDF。</span>
     </div>
     <header class="ph"><h1>ENT 專科練習　錯題本</h1>
     <div>${cat === "all" ? "全部範圍" : esc(CATS[cat] || cat)}・共 ${list.length} 題・${date}・${esc(S.user?.email || "")}</div>
@@ -1920,12 +1923,16 @@ function exportWrongPDF() {
   // 先切到預覽畫面（列印鍵壞掉的瀏覽器也看得到內容，可再按「列印／存成 PDF」或 Ctrl+P）
   document.body.classList.add("printing");
   window.scrollTo(0, 0);
+  // 預覽期間停用網路字體（Google Fonts），列印／輸出 PDF 時不必嵌入大型中文字型，Safari 會快很多
+  const webFont = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
+  if (webFont) webFont.disabled = true;
+  // 只在使用者按按鈕時才列印：自動叫出列印會讓 Safari 跳出「此網頁正在嘗試列印」確認視窗
   $("p-print").onclick = () => window.print();
-  $("p-back").onclick = () => { document.body.classList.remove("printing"); area.innerHTML = ""; };
-  // Safari 產生列印預覽很慢，不自動叫出，讓使用者看完預覽再按「列印／存成 PDF」
-  const isSafari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
-  if (!isSafari) setTimeout(() => { try { window.print(); } catch (e) { console.error(e); } }, 0);
-  else toast("預覽好了，按上方「列印／存成 PDF」", 4000);
+  $("p-back").onclick = () => {
+    document.body.classList.remove("printing"); area.innerHTML = "";
+    if (webFont) webFont.disabled = false;
+  };
+  toast("預覽好了，按上方「列印／存成 PDF」", 4000);
 }
 $("wb-pdf").onclick = exportWrongPDF;
 
